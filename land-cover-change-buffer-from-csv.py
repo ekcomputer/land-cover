@@ -102,7 +102,8 @@ def extractBufferZonalHist(point, buffer_lengths):
             dfba = dfba.append(pd.DataFrame(stat[0]['histogram'][np.newaxis, :] * np.prod(src_res)/10000, columns=classes), ignore_index=True, verify_integrity=True)
             dfba.loc[n, 'Year'] = years[i]
             dfba.loc[n, 'Buffer_m'] = buffer_lengths[j]
-            dfba.loc[n, 'Join_idx'] = point.index.values
+            dfba.loc[n, 'Lake_name'] = point.index[0]
+            dfba.loc[n, 'Join_idx'] = point.Join_idx[0]
             n += 1
     return dfba
 
@@ -115,9 +116,25 @@ def extractBufferZonalHist(point, buffer_lengths):
 ## load points
 points = gpd.read_file(pth_shp_in) # geodataframe of all lake centers
 
+## save orig index to join back in attributes later
+points['Join_idx'] = points.index
+
+## Create gdf of unique points
+points_g = points.groupby('Sample_nam')
+points_u = points_g.first() # unique lakes
+
+## Test if any lakes are collected in multiple locs or need unique names
+# center_diff =points_g.latitude.max() - points_g.latitude.min()
+# center_diff.to_csv('Python/Land-cover/center_diff.csv')
+
 ## Run function in loop
-for i in range(4): #range(len(points)): # i, (_, point) in enumerate(points[:3].iterrows()): # range(4)
-    point = points.iloc[i:i+1, :]
+for i in range(len(points_u)): #range(4): #range(len(points_u)): # i, (_, point) in enumerate(points[:3].iterrows()): # range(4)
+    point = points_u.iloc[i:i+1, :]
+
+    ## print
+    print(point.index.values)
+
+    ## zonal hist
     dfba= extractBufferZonalHist(point, buffer_lengths)
     if i==0: # TODO: use for [x in y] syntax with pd.concat.
         df = dfba
@@ -132,6 +149,10 @@ for i in range(4): #range(len(points)): # i, (_, point) in enumerate(points[:3].
 # df.set_index('Join_idx')
 
 print('done')
+
+## reset index
+df.set_index('Lake_name', inplace=True)
+
 ## write out
 df.to_excel(xlsx_out_pth)
 print(f'Wrote output: {xlsx_out_pth}')
