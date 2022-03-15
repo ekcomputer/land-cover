@@ -11,6 +11,8 @@ TODO:
 * OR: actually save data for each buffer- rewrite so dataframes are merged w/i function and record buffer length and pt location.
 * Clean up commented out lines
 * Don't compute redundant land cover for same lakes at different times
+* Vectorize zonal stats?
+* Add original csv/shp attributes from join based on index.
 '''
 
 import os
@@ -44,14 +46,14 @@ pth_lc_in_simp = '/mnt/f/Wang-above-land-cover/ABoVE_LandCover_Simplified_Bh04v0
 xlsx_out_pth = '/mnt/f/ABoVE2021/Mapping/out/xlsx/' + os.path.basename(pth_shp_in)[:-4] + '_landCoverBuffers.xlsx'
 
 ## buffers
-buffer_lengths=np.arange(90, 7000, 90)
-narrowBufferCount = 2 # number of buffer iterations. Length = (narrowBufferCount+1)  * buffer_lengths[2]
-wideBufferCount = 14 # etc
+# narrowBufferCount = 2 # number of buffer iterations. Length = (narrowBufferCount+1)  * buffer_lengths[2]
+# wideBufferCount = 14 # etc
+buffer_lengths = (270, 1350) # in m
 
 ## classes for land cover 
 classes = ['Evergreen Forest','Deciduous Forest',	'Mixed Forest',	'Woodland',	'Low Shrub',	'Tall Shrub',	'Open Shrubs',	'Herbaceous',	'Tussock Tundra',	'Sparsely Vegetated',	'Fen',	'Bog',	'Shallows/littoral',	'Barren',	'Water']
 classes_simp = ['Evergreen Forest','Deciduous Forest',	'Shrubland', 'Herbaceous',	'Sparsely Vegetated',	'Barren',	'Fen',	'Bog',	'Shallows/littoral', 'Water']
-
+years = np.arange(1984, 2014+1)
 ## dynamic values
 if use_simplified_classes:
     pth_lc_in = pth_lc_in_simp
@@ -59,7 +61,7 @@ if use_simplified_classes:
     # pth_csv_out_inner = pth_csv_out_inner.replace('land-cover-change', 'land-cover-change-10class')
     # pth_csv_out_outer = pth_csv_out_outer.replace('land-cover-change', 'land-cover-change-10class')
     
-nBuffers = buffer_lengths.size
+nBuffers = len(buffer_lengths)
 nclasses = len(classes)
 
 ## validate
@@ -75,13 +77,9 @@ def my_hist(lc):
 
 ## Function
 def extractBufferZonalHist(point, buffer_lengths):
-
+    ''' Buffer_lengths is in map units (probably m).'''
     ## buffer pts 
-    for i, length in enumerate(buffer_lengths):
-        if i==0:
-            buffers = point.buffer(length) # HERE todo: buffer on just geometry? Try changing back to "enumerate" statement
-        else:
-            buffers = buffers.append(point.buffer(length), True)
+    buffers = pd.concat([point.buffer(length) for length in buffer_lengths])
 
     ## load raster subset
     with rio.open(pth_lc_in) as src:
@@ -103,28 +101,46 @@ def extractBufferZonalHist(point, buffer_lengths):
     # stat
 
     ## Loop over all years and most buffer lengths (can be sped up by vectorizing buffers: run zonal_stats on multiple features at once)
-    array=np.full([nYears, nclasses, nBuffers], np.nan, dtype='uint32') # init array for outpu
-    for j, ring in enumerate(buffers[0:16]):
+    # array=np.full([nYears, nclasses, nBuffers], np.nan, dtype='uint32') # init array for outpu
+    
+    ## Init
+    dfba = pd.DataFrame(columns = classes + ['Year', 'Buffer_m', 'Join_idx']) # 'df buffer append' # classes.extend(['Year', 'Buffer_m'])
+    ## Loop
+    n = 0 # init
+    for j, ring in enumerate(buffers):
         for i, year in enumerate(range(nYears)):
+            ## Zonal stats. Source: https://automating-gis-processes.github.io/CSC/notebooks/L5/zonal-statistics.html
             stat = zonal_stats(ring, lc[:,:,i], affine=lc_transform, stats='count unique', add_stats = {'histogram':my_hist}, nodata=255)
-            array[i,:,j] = stat[0]['histogram']
-    # Source: https://automating-gis-processes.github.io/CSC/notebooks/L5/zonal-statistics.html
+            # array[i,:,j] = stat[0]['histogram']
+            # dfb = pd.DataFrame(stat[0]['histogram'][np.newaxis, :] * np.prod(src_res)/10000, columns = classes)
+            dfba = dfba.append(pd.DataFrame(stat[0]['histogram'][np.newaxis, :] * np.prod(src_res)/10000, columns=classes), ignore_index=True, verify_integrity=True)
+            dfba.loc[n, 'Year'] = years[i]
+            dfba.loc[n, 'Buffer_m'] = buffer_lengths[j]
+            dfba.loc[n, 'Join_idx'] = point.index.values
+            n += 1
+        ## convert to pd df in ha
+        # dfb = pd.DataFrame(array[:,:,j] * np.prod(src_res)/10000, index = np.arange(1984, 2014+1), columns = classes)  
+        # dfb['year'] = np.arange(1984, 2014+1)
+
+        ## append
+        # dfba.append(dfb, ignore_index=True, verify_integrity=True)
+
 
     ## convert to ha
-    array = array*np.prod(src_res)/10000
+    # array = array*np.prod(src_res)/10000
 
-    ## convert to pd df
-    dfbNarrow = pd.DataFrame(array[:,:,narrowBufferCount], index = np.arange(1984, 2014+1), columns = classes)
-    dfbNarrow['Buffer_m'] = (narrowBufferCount+1) * buffer_lengths[2]
-    dfbNarrow['Lat'] = point.geometry # TODO: query actual x/y vals. Etc for rest. OR actually add all attribute sof 'point' or 'ring' or join lookup ID
-    dfbNarrow['Long'] = point.geometry
+    # ## convert to pd df
+    # dfb = pd.DataFrame(array[:,:,narrowBufferCount], index = np.arange(1984, 2014+1), columns = classes)
+    # dfb['Buffer_m'] = (narrowBufferCount+1) 
+    # dfb['Lat'] = point.geometry # TODO: query actual x/y vals. Etc for rest. OR actually add all attribute sof 'point' or 'ring' or join lookup ID
+    # dfb['Long'] = point.geometry
 
-    dfbWide = pd.DataFrame(array[:,:,wideBufferCount], index = np.arange(1984, 2014+1), columns = classes)
-    dfbWide['Buffer_m'] = (wideBufferCount+1) * buffer_lengths[2]
-    dfbWide['Lat'] = point.geometry 
-    dfbWide['Long'] = point.geometry
+    # dfbWide = pd.DataFrame(array[:,:,wideBufferCount], index = np.arange(1984, 2014+1), columns = classes)
+    # dfbWide['Buffer_m'] = (wideBufferCount+1) * buffer_lengths[2]
+    # dfbWide['Lat'] = point.geometry 
+    # dfbWide['Long'] = point.geometry
 
-    return dfbNarrow, dfbWide
+    return dfba
 
 ############### END FUNCTIONS #########################
 
@@ -136,18 +152,22 @@ def extractBufferZonalHist(point, buffer_lengths):
 points = gpd.read_file(pth_shp_in) # geodataframe of all lake centers
 
 ## Run function in loop
-for i in range(2,4): # i, (_, point) in enumerate(points[:3].iterrows()): #TODO: change back
+for i in range(len(points)): # i, (_, point) in enumerate(points[:3].iterrows()): # range(4)
     point = points.iloc[i:i+1, :]
-    dfbNarrow, dfbWide = extractBufferZonalHist(point, (narrowBufferCount, wideBufferCount))
-    if i==0:
-        df = pd.concat(dfbNarrow, dfbWide)
+    dfba= extractBufferZonalHist(point, buffer_lengths)
+    if i==0: # TODO: use for [x in y] syntax with pd.concat.
+        df = dfba
     else:
-        df = pd.concat(df, pd.concat(dfbNarrow, dfbWide))
+        df = df.append(dfba)
     
     ## Save checkpoint
     if i % 10 == 0:
-        df.to_csv(pth_csv_out_outer)
+        df.to_excel(xlsx_out_pth)
+
+## Sort based on join index, which refers to original entries in shapefile
+# df.set_index('Join_idx')
 
 print('done')
 ## write out
 df.to_excel(xlsx_out_pth)
+print(f'Wrote output: {xlsx_out_pth}')
