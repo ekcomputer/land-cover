@@ -13,6 +13,7 @@ TODO:
 * Don't compute redundant land cover for same lakes at different times
 * Vectorize zonal stats?
 * Add original csv/shp attributes from join based on index.
+* Check that water normalization only refers to largest/central lake within buffer.
 '''
 
 import os
@@ -44,7 +45,9 @@ xlsx_out_pth = '/mnt/f/ABoVE2021/Mapping/out/xlsx/' + os.path.basename(pth_shp_i
 buffer_lengths = (270, 1350) # in m
 
 ## classes for land cover 
-classes = ['Evergreen Forest','Deciduous Forest',	'Mixed Forest',	'Woodland',	'Low Shrub',	'Tall Shrub',	'Open Shrubs',	'Herbaceous',	'Tussock Tundra',	'Sparsely Vegetated',	'Fen',	'Bog',	'Shallows/littoral',	'Barren',	'Water']
+classes =       ['Evergreen Forest','Deciduous Forest',	'Mixed Forest',	'Woodland',	'Low Shrub',	'Tall Shrub',	'Open Shrubs',	'Herbaceous',	'Tussock Tundra',	'Sparsely Vegetated',	'Fen',	'Bog',	'Shallows/littoral',	'Barren',	'Water']
+classes_dry =   ['Evergreen Forest','Deciduous Forest',	'Mixed Forest',	'Woodland',	'Low Shrub',	'Tall Shrub',	'Open Shrubs',	'Herbaceous',	'Tussock Tundra',	'Sparsely Vegetated',	'Fen',	'Bog',	'Barren']
+classes_wet =   ['Shallows/littoral', 'Water']
 classes_simp = ['Evergreen Forest','Deciduous Forest',	'Shrubland', 'Herbaceous',	'Sparsely Vegetated',	'Barren',	'Fen',	'Bog',	'Shallows/littoral', 'Water']
 years = np.arange(1984, 2014+1)
 
@@ -55,13 +58,8 @@ if use_simplified_classes:
 
 nBuffers = len(buffer_lengths)
 nclasses = len(classes)
+xlsx_out_norm_pth = xlsx_out_pth.replace('.xlsx', '_norm.xlsx')
 
-## validate
-print('Paths:')
-print(xlsx_out_pth)
-print(f'\nUse simplified classes: {use_simplified_classes}')
-
-############### FUNCTIONS #############################
 ## Create custom function for zonal stats that better resembles the arc/Q version
 def my_hist(lc):
     ''' Gives counts for each integer-valued landcover class, with total number hard-coded in as nclasses.'''
@@ -107,52 +105,78 @@ def extractBufferZonalHist(point, buffer_lengths):
             n += 1
     return dfba
 
-############### END FUNCTIONS #########################
+def extractTimeSeriesForLakes():
+    ## validate
+    print('Paths:')
+    print(xlsx_out_pth)
+    print(f'\nUse simplified classes: {use_simplified_classes}')
 
-## roi for cropping
-# with fiona.open(pth_roi_in, "r") as shapefile:
-#     roi = [feature["geometry"] for feature in shapefile]
+    ## roi for cropping
+    # with fiona.open(pth_roi_in, "r") as shapefile:
+    #     roi = [feature["geometry"] for feature in shapefile]
 
-## load points
-points = gpd.read_file(pth_shp_in) # geodataframe of all lake centers
+    ## load points
+    points = gpd.read_file(pth_shp_in) # geodataframe of all lake centers
 
-## save orig index to join back in attributes later
-points['Join_idx'] = points.index
+    ## save orig index to join back in attributes later
+    points['Join_idx'] = points.index
 
-## Create gdf of unique points
-points_g = points.groupby('Sample_nam')
-points_u = points_g.first() # unique lakes
+    ## Create gdf of unique points
+    points_g = points.groupby('Sample_nam')
+    points_u = points_g.first() # unique lakes
 
-## Test if any lakes are collected in multiple locs or need unique names
-# center_diff =points_g.latitude.max() - points_g.latitude.min()
-# center_diff.to_csv('Python/Land-cover/center_diff.csv')
+    ## Test if any lakes are collected in multiple locs or need unique names
+    # center_diff =points_g.latitude.max() - points_g.latitude.min()
+    # center_diff.to_csv('Python/Land-cover/center_diff.csv')
 
-## Run function in loop
-for i in range(len(points_u)): #range(4): #range(len(points_u)): # i, (_, point) in enumerate(points[:3].iterrows()): # range(4)
-    point = points_u.iloc[i:i+1, :]
+    ## Run function in loop
+    for i in range(len(points_u)): #range(4): #range(len(points_u)): # i, (_, point) in enumerate(points[:3].iterrows()): # range(4)
+        point = points_u.iloc[i:i+1, :]
 
-    ## print
-    print(point.index.values)
+        ## print
+        print(point.index.values)
 
-    ## zonal hist
-    dfba= extractBufferZonalHist(point, buffer_lengths)
-    if i==0: # TODO: use for [x in y] syntax with pd.concat.
-        df = dfba
-    else:
-        df = df.append(dfba)
+        ## zonal hist
+        dfba= extractBufferZonalHist(point, buffer_lengths)
+        if i==0: # TODO: use for [x in y] syntax with pd.concat.
+            df = dfba
+        else:
+            df = df.append(dfba)
+        
+        ## Save checkpoint
+        if i % 10 == 0:
+            df.to_excel(xlsx_out_pth)
+
+    ## Sort based on join index, which refers to original entries in shapefile
+    # df.set_index('Join_idx')
+
+    print('done')
+
+    ## reset index
+    df.set_index('Lake_name', inplace=True)
+
+    ## write out
+    df.to_excel(xlsx_out_pth)
+    print(f'Wrote output: {xlsx_out_pth}')
+
+def normalizeTimeSeries():
+
+    ## Load
+    print('Normalizing land cover...')
+    df = pd.read_excel(xlsx_out_pth)
+
+    ## find littoral percent of water areas (TODO: ensure it only comes from largest/central water body within buffer)
+    df['Littorals_pct'] = df['Shallows/littoral'] / df.loc[:,classes_wet].sum(axis=1)*100
+
+    ## Find class percent of dry areas
+    # normDry = lambda var: df[var] / df.loc[:,classes_dry].sum(axis=1)*100 # just keeping lambda function for practice
+    for var in classes_dry:
+        df[var + '_pct'] = df[var] / df.loc[:,classes_dry].sum(axis=1)*100
     
-    ## Save checkpoint
-    if i % 10 == 0:
-        df.to_excel(xlsx_out_pth)
+    ## Write out
+    df.to_excel(xlsx_out_norm_pth)
+    print(f'Wrote normalized output table: {xlsx_out_norm_pth}')
 
-## Sort based on join index, which refers to original entries in shapefile
-# df.set_index('Join_idx')
-
-print('done')
-
-## reset index
-df.set_index('Lake_name', inplace=True)
-
-## write out
-df.to_excel(xlsx_out_pth)
-print(f'Wrote output: {xlsx_out_pth}')
+if __name__ == '__main__':
+    # extractTimeSeriesForLakes()
+    normalizeTimeSeries()
