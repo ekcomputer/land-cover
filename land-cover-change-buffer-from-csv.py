@@ -14,6 +14,8 @@ TODO:
 * Vectorize zonal stats?
 * Add original csv/shp attributes from join based on index.
 * Check that water normalization only refers to largest/central lake within buffer.
+* Seaborn default plots
+* LBF percent
 '''
 
 import os
@@ -36,7 +38,7 @@ from rasterstats import zonal_stats
 use_simplified_classes=False
 
 ## in
-# pth_shp_in = '/mnt/f/ABoVE2021/Mapping/shp/ABOVE_coordinates_for_Ethan_10-19-21.shp' # points - TODO: temp until I get lake geometries for full dataset!
+# pth_shp_in = '/mnt/f/ABoVE2021/Mapping/shp/ABOVE_coordinates_for_Ethan_10-19-21.shp' # points # temp until I get lake geometries for full dataset!
 pth_shp_in = '/mnt/f/ABoVE2021/Mapping/shp/polygon_geom/ABOVE_coordinates_for_Ethan_10-19-21_jn_PADLakesVis.shp' # polygons
 pth_lc_in = '/mnt/f/Wang-above-land-cover/ABoVE_LandCover_5km_buffer.vrt'
 # pth_lc_in_simp = '/mnt/f/Wang-above-land-cover/ABoVE_LandCover_Simplified_Bh04v01.tif' # simplified 10-calss landcover
@@ -46,7 +48,7 @@ xlsx_out_pth = '/mnt/f/ABoVE2021/Mapping/out/xlsx/' + os.path.basename(pth_shp_i
 plot_dir = '/mnt/d/pic/above-land-cover'
 
 ## buffers
-buffer_lengths = (90, 1350) # in m
+buffer_lengths = (90, 990) # in m # 90, 990 # 1350
 
 ## classes for land cover 
 classes =       ['Evergreen Forest','Deciduous Forest',	'Mixed Forest',	'Woodland',	'Low Shrub',	'Tall Shrub',	'Open Shrubs',	'Herbaceous',	'Tussock Tundra',	'Sparsely Vegetated',	'Fen',	'Bog',	'Shallows/littoral',	'Barren',	'Water']
@@ -190,9 +192,10 @@ def plotTimeSeries():
 
     ## Load
     print('Plotting land cover...')
+    value_name = 'Ha' # 'Percent'
     df = pd.read_excel(xlsx_out_norm_pth, index_col=0)
-    dfg = df.groupby(['Lake_name', 'Buffer_m']) # ['Lake_name', 
-    group = dfg.get_group(('Balloon lake', buf_len)) # HERE modify to automate
+    dfg = df.groupby('Lake_name') # ['Lake_name', 
+    group = dfg.get_group('Balloon lake') # formerly ('Balloon lake', buf_len)
     
     ## Plot with mpl
     # fig, ax = plt.subplots()
@@ -200,18 +203,26 @@ def plotTimeSeries():
     # plt.savefig(os.path.join(plot_dir, 'time-series-1.png'))
 
     ## Try facet grid in seaborn
-    value_name = 'Ha' # 'Percent'
-    dfl = pd.melt(group, id_vars=['Year'], value_vars=df.columns[1:16], var_name = 'Class', value_name=value_name)# data frame long format # use df.columns[-14:] for normalized vals
-    g = sns.FacetGrid(dfl, col="Class", col_wrap=4)
-    g.map(sns.lineplot, 'Year', value_name)
-    plt.show()
-    g.savefig(os.path.join(plot_dir, 'time-series-facets-1.png'))
+    # dfl = pd.melt(group, id_vars=['Year', 'Buffer_m'], value_vars=df.columns[1:16], var_name = 'Class', value_name=value_name)# data frame long format # use df.columns[-14:] for normalized vals
+    # g = sns.FacetGrid(dfl, col="Class", hue="Buffer_m", col_wrap=4)
+    # g.map(sns.lineplot, 'Year', value_name)
+    # g.add_legend(title="Buffer (m)")
+    # plt.show()
+    # g.savefig(os.path.join(plot_dir, 'time-series-facets-1.png'))
 
     ## Plot for all lakes!
-    for lake in j:
-        dfg.
-        group = dfg.get_group(('Balloon lake', buf_len))
-
+    for lake in dfg.groups:
+        group = dfg.get_group(lake)
+        dfl = pd.melt(group, id_vars=['Year', 'Buffer_m'], value_vars=df.columns[1:16], var_name = 'Class', value_name=value_name)# data frame long format # use df.columns[-14:] for normalized vals
+        g = sns.FacetGrid(dfl, col="Class", hue="Buffer_m", col_wrap=4)
+        g.map(sns.lineplot, 'Year', value_name)
+        g.add_legend(title="Buffer (m)")
+        g.fig.subplots_adjust(top=0.93) # adjust the Figure to add super title
+        g.fig.suptitle(lake)
+        # plt.show()
+        plt.close()
+        g.savefig(os.path.join(plot_dir, 'time-series-by-lake', f'time-series-facets-{lake}.png').replace(' ','-'))
+        print(lake)
     print('Done plotting.')
 
 if __name__ == '__main__':
