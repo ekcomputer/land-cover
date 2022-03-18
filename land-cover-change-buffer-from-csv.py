@@ -18,6 +18,8 @@ TODO:
 
 import os
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 import pandas as pd
 import geopandas as gpd
 import rasterio as rio
@@ -34,15 +36,17 @@ from rasterstats import zonal_stats
 use_simplified_classes=False
 
 ## in
-pth_shp_in = '/mnt/f/ABoVE2021/Mapping/shp/ABOVE_coordinates_for_Ethan_10-19-21.shp'
+# pth_shp_in = '/mnt/f/ABoVE2021/Mapping/shp/ABOVE_coordinates_for_Ethan_10-19-21.shp' # points - TODO: temp until I get lake geometries for full dataset!
+pth_shp_in = '/mnt/f/ABoVE2021/Mapping/shp/polygon_geom/ABOVE_coordinates_for_Ethan_10-19-21_jn_PADLakesVis.shp' # polygons
 pth_lc_in = '/mnt/f/Wang-above-land-cover/ABoVE_LandCover_5km_buffer.vrt'
 # pth_lc_in_simp = '/mnt/f/Wang-above-land-cover/ABoVE_LandCover_Simplified_Bh04v01.tif' # simplified 10-calss landcover
 
 ## out
 xlsx_out_pth = '/mnt/f/ABoVE2021/Mapping/out/xlsx/' + os.path.basename(pth_shp_in)[:-4] + '_landCoverBuffers.xlsx'
+plot_dir = '/mnt/d/pic/above-land-cover'
 
 ## buffers
-buffer_lengths = (270, 1350) # in m
+buffer_lengths = (90, 1350) # in m
 
 ## classes for land cover 
 classes =       ['Evergreen Forest','Deciduous Forest',	'Mixed Forest',	'Woodland',	'Low Shrub',	'Tall Shrub',	'Open Shrubs',	'Herbaceous',	'Tussock Tundra',	'Sparsely Vegetated',	'Fen',	'Bog',	'Shallows/littoral',	'Barren',	'Water']
@@ -66,10 +70,10 @@ def my_hist(lc):
     return np.histogram(np.ndarray.flatten(lc), range=[1,nclasses+1], bins = nclasses)[0] # bin counts
 
 ## Function
-def extractBufferZonalHist(point, buffer_lengths):
+def extractBufferZonalHist(poly, buffer_lengths):
     ''' Buffer_lengths is in map units (probably m).'''
     ## buffer pts 
-    buffers = pd.concat([point.buffer(length) for length in buffer_lengths])
+    buffers = pd.concat([poly.buffer(length) for length in buffer_lengths])
 
     ## load raster subset
     with rio.open(pth_lc_in) as src:
@@ -100,8 +104,8 @@ def extractBufferZonalHist(point, buffer_lengths):
             dfba = dfba.append(pd.DataFrame(stat[0]['histogram'][np.newaxis, :] * np.prod(src_res)/10000, columns=classes), ignore_index=True, verify_integrity=True)
             dfba.loc[n, 'Year'] = years[i]
             dfba.loc[n, 'Buffer_m'] = buffer_lengths[j]
-            dfba.loc[n, 'Lake_name'] = point.index[0]
-            dfba.loc[n, 'Join_idx'] = point.Join_idx[0]
+            dfba.loc[n, 'Lake_name'] = poly.index[0]
+            dfba.loc[n, 'Join_idx'] = poly.Join_idx[0]
             n += 1
     return dfba
 
@@ -115,29 +119,29 @@ def extractTimeSeriesForLakes():
     # with fiona.open(pth_roi_in, "r") as shapefile:
     #     roi = [feature["geometry"] for feature in shapefile]
 
-    ## load points
-    points = gpd.read_file(pth_shp_in) # geodataframe of all lake centers
+    ## load lake polygons
+    polys = gpd.read_file(pth_shp_in) # geodataframe of all lake outlines
 
     ## save orig index to join back in attributes later
-    points['Join_idx'] = points.index
+    polys['Join_idx'] = polys.index
 
-    ## Create gdf of unique points
-    points_g = points.groupby('Sample_nam')
-    points_u = points_g.first() # unique lakes
+    ## Create gdf of unique polygons
+    polys_g = polys.groupby('Sample_nam')
+    polys_u = polys_g.first() # unique lakes
 
     ## Test if any lakes are collected in multiple locs or need unique names
-    # center_diff =points_g.latitude.max() - points_g.latitude.min()
+    # center_diff =polys_g.latitude.max() - polys_g.latitude.min()
     # center_diff.to_csv('Python/Land-cover/center_diff.csv')
 
     ## Run function in loop
-    for i in range(len(points_u)): #range(4): #range(len(points_u)): # i, (_, point) in enumerate(points[:3].iterrows()): # range(4)
-        point = points_u.iloc[i:i+1, :]
+    for i in range(len(polys_u)): #range(4): #range(len(polys_u)): # i, (_, poly) in enumerate(polys[:3].iterrows()): # range(4)
+        poly = polys_u.iloc[i:i+1, :]
 
         ## print
-        print(point.index.values)
+        print(poly.index.values)
 
         ## zonal hist
-        dfba= extractBufferZonalHist(point, buffer_lengths)
+        dfba= extractBufferZonalHist(poly, buffer_lengths)
         if i==0: # TODO: use for [x in y] syntax with pd.concat.
             df = dfba
         else:
@@ -168,6 +172,9 @@ def normalizeTimeSeries():
     ## find littoral percent of water areas (TODO: ensure it only comes from largest/central water body within buffer)
     df['Littorals_pct'] = df['Shallows/littoral'] / df.loc[:,classes_wet].sum(axis=1)*100
 
+    ## Find wetland percent, like michela does, by taking: (L+B+F)/(L+B+F+W)*100
+    # TODO
+
     ## Find class percent of dry areas
     # normDry = lambda var: df[var] / df.loc[:,classes_dry].sum(axis=1)*100 # just keeping lambda function for practice
     for var in classes_dry:
@@ -177,6 +184,37 @@ def normalizeTimeSeries():
     df.to_excel(xlsx_out_norm_pth)
     print(f'Wrote normalized output table: {xlsx_out_norm_pth}')
 
+def plotTimeSeries():
+    ## vars
+    buf_len = buffer_lengths[0] # use the smallest (90 m) buffer for plotting
+
+    ## Load
+    print('Plotting land cover...')
+    df = pd.read_excel(xlsx_out_norm_pth, index_col=0)
+    dfg = df.groupby(['Lake_name', 'Buffer_m']) # ['Lake_name', 
+    group = dfg.get_group(('Balloon lake', buf_len)) # HERE modify to automate
+    
+    ## Plot with mpl
+    # fig, ax = plt.subplots()
+    # group.plot(x='Year', y='Littorals_pct', ax=ax)
+    # plt.savefig(os.path.join(plot_dir, 'time-series-1.png'))
+
+    ## Try facet grid in seaborn
+    value_name = 'Ha' # 'Percent'
+    dfl = pd.melt(group, id_vars=['Year'], value_vars=df.columns[1:16], var_name = 'Class', value_name=value_name)# data frame long format # use df.columns[-14:] for normalized vals
+    g = sns.FacetGrid(dfl, col="Class", col_wrap=4)
+    g.map(sns.lineplot, 'Year', value_name)
+    plt.show()
+    g.savefig(os.path.join(plot_dir, 'time-series-facets-1.png'))
+
+    ## Plot for all lakes!
+    for lake in j:
+        dfg.
+        group = dfg.get_group(('Balloon lake', buf_len))
+
+    print('Done plotting.')
+
 if __name__ == '__main__':
     # extractTimeSeriesForLakes()
-    normalizeTimeSeries()
+    # normalizeTimeSeries()
+    plotTimeSeries()
