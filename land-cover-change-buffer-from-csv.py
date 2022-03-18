@@ -6,16 +6,11 @@ Summary
 For calculating land cover change within polygons. Used for whitefish lake for Karen Wang and Jonathan Wang ABoVE land cover dataset- multitemporal.
 EDK 2021.11.19
 TODO: 
-* Can use zonal statistics on multiple polygons (buffers) at once, instead of in loop.
-* Remove unnecessary buffer computation if I'm only saving two of them. 
-* OR: actually save data for each buffer- rewrite so dataframes are merged w/i function and record buffer length and pt location.
-* Clean up commented out lines
-* Don't compute redundant land cover for same lakes at different times
-* Vectorize zonal stats?
+* Vectorizing: Can use zonal statistics on multiple polygons (buffers) at once, instead of in loop (fine for now, bc quite fast regardless).
 * Add original csv/shp attributes from join based on index.
 * Check that water normalization only refers to largest/central lake within buffer.
-* Seaborn default plots
 * LBF percent
+* Compute actual stats, based on /mnt/c/Users/ekyzivat/Dropbox/Matlab/ABoVE/UAVSAR/analysis/lake-timeseries-stats.ipynb
 '''
 
 import os
