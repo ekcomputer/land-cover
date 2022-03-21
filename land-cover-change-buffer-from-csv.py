@@ -32,14 +32,14 @@ from rasterstats import zonal_stats
 # use_simplified_classes=True
 use_simplified_classes=False
 
-## in
+## in: base dir = F:\ABoVE2021\Mapping
 # pth_shp_in = '/mnt/f/ABoVE2021/Mapping/shp/ABOVE_coordinates_for_Ethan_10-19-21.shp' # points # temp until I get lake geometries for full dataset!
 pth_shp_in = '/mnt/f/ABoVE2021/Mapping/shp/polygon_geom/ABOVE_coordinates_for_Ethan_10-19-21_jn_PADLakesVis.shp' # polygons
 pth_lc_in = '/mnt/f/Wang-above-land-cover/ABoVE_LandCover_5km_buffer.vrt'
 # pth_lc_in_simp = '/mnt/f/Wang-above-land-cover/ABoVE_LandCover_Simplified_Bh04v01.tif' # simplified 10-calss landcover
 
 ## out
-xlsx_out_pth = '/mnt/f/ABoVE2021/Mapping/out/xlsx/' + os.path.basename(pth_shp_in)[:-4] + '_landCoverBuffers.xlsx'
+xlsx_out_pth = '/mnt/f/ABoVE2021/Mapping/out/xlsx/' + os.path.basename(pth_shp_in)[:-4] + '_landCoverBuffers.xlsx' # e.g. /mnt/f/ABoVE2021/Mapping/out/xlsx/ABOVE_coordinates_for_Ethan_10-19-21_jn_PADLakesVis_landCoverBuffers.xlsx
 plot_dir = '/mnt/d/pic/above-land-cover'
 
 ## buffers
@@ -59,7 +59,8 @@ if use_simplified_classes:
 
 nBuffers = len(buffer_lengths)
 nclasses = len(classes)
-xlsx_out_norm_pth = xlsx_out_pth.replace('.xlsx', '_norm.xlsx')
+xlsx_out_norm_pth = xlsx_out_pth.replace('.xlsx', '_norm.xlsx') # e.g. /mnt/f/ABoVE2021/Mapping/out/xlsx/ABOVE_coordinates_for_Ethan_10-19-21_jn_PADLakesVis_landCoverBuffers_norm.xlsx
+xlsx_out_time_series_features_pth = xlsx_out_pth.replace('.xlsx', '_tsFeatures.xlsx') # e.g. /mnt/f/ABoVE2021/Mapping/out/xlsx/ABOVE_coordinates_for_Ethan_10-19-21_jn_PADLakesVis_landCoverBuffers_tsFeatures.xlsx
 
 ## Create custom function for zonal stats that better resembles the arc/Q version
 def my_hist(lc):
@@ -68,7 +69,14 @@ def my_hist(lc):
 
 ## Function
 def extractBufferZonalHist(poly, buffer_lengths):
-    ''' Buffer_lengths is in map units (probably m).'''
+    ''' Function to run in-memory that computes zonal histagram for an arbitrary number of buffers (typically 2).
+        
+        Inputs:
+        Poly:               polygon-geometry geodataframe of one lake            
+        Buffer_lengths:     is in map units (probably m).
+        
+        Output:             dfba: a gdf with attributes for buffer length, year, join index for the lake given by 'poly'
+        '''
     ## buffer pts 
     buffers = pd.concat([poly.buffer(length) for length in buffer_lengths])
 
@@ -107,6 +115,9 @@ def extractBufferZonalHist(poly, buffer_lengths):
     return dfba
 
 def extractTimeSeriesForLakes():
+    '''
+    Runs extractBufferZonalHist in a loop and outputs final data to 'xlsx_out_pth'.
+    '''
     ## validate
     print('Paths:')
     print(xlsx_out_pth)
@@ -161,7 +172,9 @@ def extractTimeSeriesForLakes():
     print(f'Wrote output: {xlsx_out_pth}')
 
 def normalizeTimeSeries():
-
+    '''
+    Loads 'xlsx_out_pth', normalizes water classes by total water and land classes by total land (in buffer). Outputs data to 'xlsx_out_norm_pth'.
+    '''
     ## Load
     print('Normalizing land cover...')
     df = pd.read_excel(xlsx_out_pth)
@@ -182,6 +195,9 @@ def normalizeTimeSeries():
     print(f'Wrote normalized output table: {xlsx_out_norm_pth}')
 
 def plotTimeSeries():
+    '''
+    Loads 'xlsx_out_norm_pth', manipulates data, and creates a multi-facted time-series plot for each lake from the ABoVE landcover dataset. Saves plots to 'plot_dir'
+    '''
     ## vars
     buf_len = buffer_lengths[0] # use the smallest (90 m) buffer for plotting
 
@@ -220,7 +236,36 @@ def plotTimeSeries():
         print(lake)
     print('Done plotting.')
 
+def extractTimeSeriesFeatures():
+    '''
+    Loads data from 'xlsx_out_norm_pth' and reduces each time series for the specified buffer (probably smallest buffer) to a series of features/metrics.
+    Outputs data to 'xlsx_out_time_series_features_pth'.
+    '''
+
+    ## Load
+    print('Calculating time series features...')
+    df = pd.read_excel(xlsx_out_norm_pth, index_col=0)
+
+    ## Group by lake
+    dfg = df.groupby('Lake_name')
+
+    ## Take last (year 2014) value as initial features for output df
+    stats = dfg.last()
+
+    ## Rename to highlight that they are only from a single year
+    meta_columns = ['Year', 'Buffer_m', 'Join_idx'] # metadata
+    mapper = {var: (var + '_2014').replace(' ','_') for var in stats.drop(['Year', 'Buffer_m', 'Join_idx'], axis=1).columns}
+    stats.rename(columns=mapper, inplace=True) # rename cols
+    [stats.insert(0, col, stats.pop(col)) for col in meta_columns] # re-order cols
+
+    ## Compute features
+    # dropna?
+
+    ## Write out
+    stats.to_excel(xlsx_out_time_series_features_pth)
+    print(f'Wrote normalized output table: {xlsx_out_time_series_features_pth}')
 if __name__ == '__main__':
     # extractTimeSeriesForLakes()
     # normalizeTimeSeries()
-    plotTimeSeries()
+    # plotTimeSeries()
+    extractTimeSeriesFeatures()
