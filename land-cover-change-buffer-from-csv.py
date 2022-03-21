@@ -11,6 +11,8 @@ TODO:
 * Check that water normalization only refers to largest/central lake within buffer.
 * LBF percent
 * Compute actual stats, based on /mnt/c/Users/ekyzivat/Dropbox/Matlab/ABoVE/UAVSAR/analysis/lake-timeseries-stats.ipynb
+* Loops for ts stats over multiple buffers
+* Add watershed buffer
 '''
 
 import os
@@ -245,24 +247,40 @@ def extractTimeSeriesFeatures():
     ## Load
     print('Calculating time series features...')
     df = pd.read_excel(xlsx_out_norm_pth, index_col=0)
+    df.query('Buffer_m == @buffer_lengths[0]', inplace=True)
+    df['Total_inun'] = df.Water + df['Shallows/littoral']
 
     ## Group by lake
     dfg = df.groupby('Lake_name')
 
     ## Take last (year 2014) value as initial features for output df
-    stats = dfg.last()
+    stats_last = dfg.last()
 
-    ## Rename to highlight that they are only from a single year
+    ## Compute median vals
     meta_columns = ['Year', 'Buffer_m', 'Join_idx'] # metadata
-    mapper = {var: (var + '_2014').replace(' ','_') for var in stats.drop(['Year', 'Buffer_m', 'Join_idx'], axis=1).columns}
-    stats.rename(columns=mapper, inplace=True) # rename cols
-    [stats.insert(0, col, stats.pop(col)) for col in meta_columns] # re-order cols
+    stats_median = dfg.median().drop(columns=meta_columns)
 
+    ## Rename stats vars for 2014 
+    mapper = {var: (var + '_2014').replace(' ','_').replace('/','-') for var in stats_last.drop(meta_columns, axis=1).columns}
+    stats_last.rename(columns=mapper, inplace=True) # rename cols
+
+    ## Rename stats vars for median
+    mapper = {var: (var + '_med').replace(' ','_').replace('/','-') for var in stats_median.columns}
+    stats_median.rename(columns=mapper, inplace=True) # rename cols
+
+    ## Insert median stats into stats df
+    stats = pd.concat((stats_last, stats_median), axis='columns')
+
+    ## Reorder to put meta vars first
+    [stats.insert(0, col, stats.pop(col)) for col in meta_columns] # re-order cols
+   
     ## Compute features
     # dropna?
+    
 
+    
     ## Write out
-    stats.to_excel(xlsx_out_time_series_features_pth)
+    stats.to_excel(xlsx_out_time_series_features_pth, freeze_panes=(1,4))
     print(f'Wrote normalized output table: {xlsx_out_time_series_features_pth}')
 if __name__ == '__main__':
     # extractTimeSeriesForLakes()
