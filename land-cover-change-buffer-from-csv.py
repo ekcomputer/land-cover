@@ -9,11 +9,12 @@ TODO:
 * Vectorizing: Can use zonal statistics on multiple polygons (buffers) at once, instead of in loop (fine for now, bc quite fast regardless).
 * Add original csv/shp attributes from join based on index.
 * Check that water normalization only refers to largest/central lake within buffer.
-* LBF percent
 * Compute actual stats, based on /mnt/c/Users/ekyzivat/Dropbox/Matlab/ABoVE/UAVSAR/analysis/lake-timeseries-stats.ipynb
 * Loops for ts stats over multiple buffers
 * Add watershed buffer
 * Load in csv to join in Location (site) names
+* Calc mean dist from shoreline in first processing function (need to write custom script)
+* IMPORTANT: Find a way to automatically include Lat/Long and any note columns in final spreadsheet (perhaps join in?) Right now, I'm just using a quick fix in Excel.
 '''
 
 import os
@@ -28,6 +29,8 @@ import fiona
 import rasterio.mask
 # from scipy.stats import binned_statistic
 from rasterstats import zonal_stats
+from scipy.stats.mstats import theilslopes
+import pymannkendall
 
 ## I/O
 
@@ -44,6 +47,7 @@ pth_lc_in = '/mnt/f/Wang-above-land-cover/ABoVE_LandCover_5km_buffer.vrt'
 
 ## out
 xlsx_out_pth = '/mnt/f/ABoVE2021/Mapping/out/xlsx/' + os.path.basename(pth_shp_in)[:-4] + '_landCoverBuffers.xlsx' # e.g. /mnt/f/ABoVE2021/Mapping/out/xlsx/ABOVE_coordinates_for_Ethan_10-19-21_jn_PADLakesVis_landCoverBuffers.xlsx
+# shp_projected_out_pth = pth_shp_in.replace('_geom.shp', '_albers_geom.shp')
 plot_dir = '/mnt/d/pic/above-land-cover'
 
 ## buffers
@@ -52,6 +56,7 @@ buffer_lengths = (90, 990) # in m # 90, 990 # 1350
 ## classes for land cover 
 classes =       ['Evergreen Forest','Deciduous Forest',	'Mixed Forest',	'Woodland',	'Low Shrub',	'Tall Shrub',	'Open Shrubs',	'Herbaceous',	'Tussock Tundra',	'Sparsely Vegetated',	'Fen',	'Bog',	'Shallows/littoral',	'Barren',	'Water']
 classes_dry =   ['Evergreen Forest','Deciduous Forest',	'Mixed Forest',	'Woodland',	'Low Shrub',	'Tall Shrub',	'Open Shrubs',	'Herbaceous',	'Tussock Tundra',	'Sparsely Vegetated',	'Fen',	'Bog',	'Barren']
+classes_dry_rn = [item.replace(' ','_').replace('/','_') for item in classes_dry] # rename var too 
 classes_wet =   ['Shallows/littoral', 'Water']
 classes_simp = ['Evergreen Forest','Deciduous Forest',	'Shrubland', 'Herbaceous',	'Sparsely Vegetated',	'Barren',	'Fen',	'Bog',	'Shallows/littoral', 'Water']
 years = np.arange(1984, 2014+1)
@@ -65,7 +70,7 @@ nBuffers = len(buffer_lengths)
 nclasses = len(classes)
 xlsx_out_norm_pth = xlsx_out_pth.replace('.xlsx', '_norm.xlsx') # e.g. /mnt/f/ABoVE2021/Mapping/out/xlsx/ABOVE_coordinates_for_Ethan_10-19-21_jn_PADLakesVis_landCoverBuffers_norm.xlsx
 xlsx_out_time_series_features_pth = xlsx_out_pth.replace('.xlsx', '_tsFeatures.xlsx') # e.g. /mnt/f/ABoVE2021/Mapping/out/xlsx/ABOVE_coordinates_for_Ethan_10-19-21_jn_PADLakesVis_landCoverBuffers_tsFeatures.xlsx
-
+xlsx_out_time_series_features_core_pth = xlsx_out_time_series_features_pth.replace('_tsFeatures.xlsx', '_core_tsFeatures.xlsx')
 ## Create custom function for zonal stats that better resembles the arc/Q version
 def my_hist(lc):
     ''' Gives counts for each integer-valued landcover class, with total number hard-coded in as nclasses.'''
@@ -114,13 +119,15 @@ def extractBufferZonalHist(poly, buffer_lengths):
             dfba.loc[n, 'Year'] = years[i]
             dfba.loc[n, 'Buffer_m'] = buffer_lengths[j]
             dfba.loc[n, 'Lake_name'] = poly.index[0]
-            dfba.loc[n, 'Join_idx'] = poly.Join_idx[0]
+            dfba.loc[n, 'Join_idx'] = poly.Join_idx.values #[0]
+            dfba.loc[n, 'Area_m2'] = poly.Area_m2[0] # could do by running pd.concat((dfba, poly), axis='rows'), but that would add a few more columns to a very tall dataframe...
+            dfba.loc[n, 'Perim_m2'] = poly.Perim_m2[0]
             n += 1
     return dfba
 
 def extractTimeSeriesForLakes():
     '''
-    Runs extractBufferZonalHist in a loop and outputs final data to 'xlsx_out_pth'.
+    Runs extractBufferZonalHist in a loop and outputs final data to 'xlsx_out_pth'. Also outputs map-projected shapefile to 'shp_projected_out_pth.'
     '''
     ## validate
     print('Paths:')
@@ -137,9 +144,16 @@ def extractTimeSeriesForLakes():
     ## save orig index to join back in attributes later
     polys['Join_idx'] = polys.index
 
-    ## Create gdf of unique polygons
+    ## Calc area and perim (TODO: dist from shoreline)
+    polys['Area_m2'] = polys.area
+    polys['Perim_m2'] = polys.length
+
+    ## Create gdf of unique polygons (they should already be unique though)
     polys_g = polys.groupby('Sample_nam')
     polys_u = polys_g.first() # unique lakes
+
+    ## Join in area and perim (not needed)
+    # polys_u = polys_u.merge(polys.loc[:, ['Sample_nam', 'Area_m2', 'Perim_m2']], left_index=True, right_on='Sample_nam', how='left')
 
     ## Test if any lakes are collected in multiple locs or need unique names
     # center_diff =polys_g.latitude.max() - polys_g.latitude.min()
@@ -187,13 +201,30 @@ def normalizeTimeSeries():
     df['Littorals_pct'] = df['Shallows/littoral'] / df.loc[:,classes_wet].sum(axis=1)*100
 
     ## Find wetland percent, like michela does, by taking: (L+B+F)/(L+B+F+W)*100
-    # TODO
+    df['Littoral_wetland_pct'] = (df['Shallows/littoral'] + df.Bog + df.Fen)/ (df.loc[:,classes_wet].sum(axis=1) + df.Bog + df.Fen)*100
 
     ## Find class percent of dry areas
     # normDry = lambda var: df[var] / df.loc[:,classes_dry].sum(axis=1)*100 # just keeping lambda function for practice
     for var in classes_dry:
         df[var + '_pct'] = df[var] / df.loc[:,classes_dry].sum(axis=1)*100
     
+    ## Rename cols to remove spaces
+    mapper = {var: var.replace(' ','_').replace('/','_') for var in df.columns}
+    df.rename(columns=mapper, inplace=True) # rename cols
+
+    ## Lump into groups
+    df['Total_inun'] = df.Water + df.Shallows_littoral
+    df['Trees'] = df.Evergreen_Forest + df.Deciduous_Forest + df.Mixed_Forest + df.Woodland
+    df['Shrubs'] = df.Low_Shrub + df.Tall_Shrub + df.Open_Shrubs
+    df['Wetlands'] = df.Fen + df.Bog # + df.Shallows_littoral
+    df['Graminoid'] = df.Herbaceous + df.Tussock_Tundra
+    df['Sparse'] = df.Barren + df.Sparsely_Vegetated
+
+    ## Find class percent of lumped dry areas
+    lumped_classes = ['Trees', 'Shrubs', 'Wetlands', 'Graminoid', 'Sparse']
+    for var in lumped_classes:
+        df[var + '_pct'] = df[var] / df.loc[:,classes_dry_rn].sum(axis=1)*100
+
     ## Write out
     df.to_excel(xlsx_out_norm_pth)
     print(f'Wrote normalized output table: {xlsx_out_norm_pth}')
@@ -207,7 +238,6 @@ def plotTimeSeries():
 
     ## Load
     print('Plotting land cover...')
-    value_name = 'Ha' # 'Percent'
     df = pd.read_excel(xlsx_out_norm_pth, index_col=0)
     dfg = df.groupby('Lake_name') # ['Lake_name', 
     # group = dfg.get_group('Balloon lake') # formerly ('Balloon lake', buf_len)
@@ -226,18 +256,24 @@ def plotTimeSeries():
     # g.savefig(os.path.join(plot_dir, 'time-series-facets-1.png'))
 
     ## Plot for all lakes!
-    for lake in dfg.groups:
-        group = dfg.get_group(lake)
-        dfl = pd.melt(group, id_vars=['Year', 'Buffer_m'], value_vars=df.columns[1:16], var_name = 'Class', value_name=value_name)# data frame long format # use df.columns[-14:] for normalized vals
-        g = sns.FacetGrid(dfl, col="Class", hue="Buffer_m", col_wrap=4)
-        g.map(sns.lineplot, 'Year', value_name)
-        g.add_legend(title="Buffer (m)")
-        g.fig.subplots_adjust(top=0.93) # adjust the Figure to add super title
-        g.fig.suptitle(lake)
-        # plt.show()
-        plt.close()
-        g.savefig(os.path.join(plot_dir, 'time-series-by-lake', f'time-series-facets-{lake}.png').replace(' ','-'))
-        print(lake)
+    plot_types = { # dict for plotting params
+        'Ha': {'slice': slice(1,16), 'col_wrap': 4, 'subdir':'time-series-by-lake'},
+        'Normalized area (%)': {'slice': slice(21,36), 'col_wrap': 4, 'subdir':'time-series-by-lake-norm'},
+        'Norm. land group area (%)': {'slice': slice(42, 47), 'col_wrap': 2, 'subdir':'time-series-by-lake-grouped-norm'} # NOTE: columns 34-40 are non-normalized groups
+        }
+    for type in ['Norm. land group area (%)']: #plot_types: # HERE: Switch to modify which type of plot to use or use full dict
+        for lake in dfg.groups:
+            group = dfg.get_group(lake)
+            dfl = pd.melt(group, id_vars=['Year', 'Buffer_m'], value_vars=df.columns[plot_types[type]['slice']], var_name = 'Class', value_name=type)# data frame long format
+            g = sns.FacetGrid(dfl, col="Class", hue="Buffer_m", col_wrap=plot_types[type]['col_wrap'])
+            g.map(sns.lineplot, 'Year', type)
+            g.add_legend(title="Buffer (m)")
+            g.fig.subplots_adjust(top=0.93) # adjust the Figure to add super title
+            g.fig.suptitle(f'{lake} ({group.Area_m2.mode()[0]/1e6:.2f} $km^2$)') # used mode, but mean, first, med would give same answer
+            # plt.show()
+            plt.close()
+            g.savefig(os.path.join(plot_dir, plot_types[type]['subdir'], f'time-series-facets-{lake}.png').replace(' ','-'))
+            print(lake)
     print('Done plotting.')
 
 def extractTimeSeriesFeatures():
@@ -249,8 +285,9 @@ def extractTimeSeriesFeatures():
     ## Load
     print('Calculating time series features...')
     df = pd.read_excel(xlsx_out_norm_pth, index_col=0)
+
+    ## Filter by buffer length
     df.query('Buffer_m == @buffer_lengths[0]', inplace=True)
-    df['Total_inun'] = df.Water + df['Shallows/littoral']
 
     ## Group by lake
     dfg = df.groupby('Lake_name')
@@ -258,32 +295,75 @@ def extractTimeSeriesFeatures():
     ## Take last (year 2014) value as initial features for output df
     stats_last = dfg.last()
 
+    ## Remove unnecessary columns
+    stats_last.drop('Year', axis=1, inplace=True)
+
     ## Compute median vals
-    meta_columns = ['Year', 'Buffer_m', 'Join_idx'] # metadata
+    meta_columns = ['Buffer_m', 'Join_idx', 'Area_m2', 'Perim_m2'] # metadata
     stats_median = dfg.median().drop(columns=meta_columns)
 
     ## Rename stats vars for 2014 
-    mapper = {var: (var + '_2014').replace(' ','_').replace('/','-') for var in stats_last.drop(meta_columns, axis=1).columns}
+    mapper = {var: (var + '_2014') for var in stats_last.drop(meta_columns, axis=1).columns}
     stats_last.rename(columns=mapper, inplace=True) # rename cols
 
     ## Rename stats vars for median
-    mapper = {var: (var + '_med').replace(' ','_').replace('/','-') for var in stats_median.columns}
+    mapper = {var: (var + '_med') for var in stats_median.columns}
     stats_median.rename(columns=mapper, inplace=True) # rename cols
 
     ## Insert median stats into stats df
     stats = pd.concat((stats_last, stats_median), axis='columns')
 
     ## Reorder to put meta vars first
-    [stats.insert(0, col, stats.pop(col)) for col in meta_columns] # re-order cols
+    [stats.insert(0, col, stats.pop(col)) for col in meta_columns[-1::-1]] # re-order cols
    
-    ## Compute features
+    ## Compute more features
     # dropna?
-    
+    # 1 Dynamism, 1.5 RSD of water, 2 trend in water and shrubs, 3 trend in dom veg
 
-    
+    grouped_classes = ['Trees', 'Shrubs', 'Wetlands', 'Graminoid', 'Sparse']
+
+    stats['Total_inun_RSD'] = dfg.Total_inun.std()/dfg.Total_inun.mean()
+    stats['Total_inun_dyn_pct'] = (dfg.Total_inun.max() - dfg.Total_inun.min()) / dfg.Total_inun.max() * 100
+    stats['Hi_water_yr'] = dfg.Total_inun.apply(lambda group: years[np.argmax(group)]) # Cool! Use GroupBy.apply to apply a lambda function over all groups!
+    stats['Lo_water_yr'] = dfg.Total_inun.apply(lambda group: years[np.argmin(group)]) # Cool! Use GroupBy.apply to apply a lambda function over all groups!
+    stats['Dominant_veg_2014'] = dfg.last().loc[:, classes_dry_rn].apply(lambda lake: classes_dry_rn[np.argmax(lake)], axis='columns')
+    stats['Dominant_veg_group_2014'] = dfg.last().loc[:, grouped_classes].apply(lambda lake: grouped_classes[np.argmax(lake)], axis='columns')
+    stats['SDF'] = stats.Perim_m2 / (2 * np.sqrt(np.pi * stats.Area_m2))
+    stats['Perim_area_ratio'] = stats.Perim_m2 / stats.Area_m2
+    # dfg['Year', 'Total_inun'].apply(lambda group: theilslopes(group.Year, group.Total_inun))
+    for lcClass in ['Total_inun'] + grouped_classes:
+        stats[lcClass + '_change'] = dfg[lcClass].apply(lambda group: theilslopes(group)[0]) # Using method from Kuhn et and Butman 2021, PNAS
+        stats[lcClass + '_trend'] = dfg[lcClass].apply(lambda group: pymannkendall.original_test(group)[0])
+
     ## Write out
-    stats.to_excel(xlsx_out_time_series_features_pth, freeze_panes=(1,4))
-    print(f'Wrote normalized output table: {xlsx_out_time_series_features_pth}')
+    stats.to_excel(xlsx_out_time_series_features_pth, freeze_panes=(1,3))
+    print(f'Wrote time series output table: {xlsx_out_time_series_features_pth}')
+
+    ## Save and write out most important stats
+    important_vars = [					
+        'Area_m2',
+        'Perim_m2',
+        'Total_inun_2014',
+        'Trees_pct_2014',		
+        'Shrubs_pct_2014',				
+        'Wetlands_pct_2014',				
+        'Graminoid_pct_2014',				
+        'Sparse_pct_2014',
+        'Littorals_pct_2014',
+        'Littoral_wetland_pct_2014',
+        'Total_inun_RSD',				
+        'Total_inun_dyn_pct',			
+        'Hi_water_yr',					
+        'Lo_water_yr',					
+        'Dominant_veg_2014',
+        'Dominant_veg_group_2014',
+        'SDF',	
+        'Perim_area_ratio',						
+        'Total_inun_change',			
+        'Total_inun_trend'
+    ]
+    stats.loc[:, important_vars].to_excel(xlsx_out_time_series_features_core_pth, freeze_panes=(1,1))
+    print(f'Wrote time series output table (greatest hits): {xlsx_out_time_series_features_core_pth}')
 if __name__ == '__main__':
     # extractTimeSeriesForLakes()
     # normalizeTimeSeries()
