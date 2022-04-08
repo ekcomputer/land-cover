@@ -3,7 +3,7 @@
 
 '''
 Summary
-For calculating land cover change within polygons. Used for whitefish lake for Karen Wang and Jonathan Wang ABoVE land cover dataset- multitemporal.
+For calculating land cover change within polygons. Used for whitefish lake for Karen Wang and Jonathan Wang ABoVE land cover dataset- multitemporal. Use 'scratch' environment.
 EDK 2021.11.19
 TODO: 
 * Vectorizing: Can use zonal statistics on multiple polygons (buffers) at once, instead of in loop (fine for now, bc quite fast regardless).
@@ -13,6 +13,7 @@ TODO:
 * Compute actual stats, based on /mnt/c/Users/ekyzivat/Dropbox/Matlab/ABoVE/UAVSAR/analysis/lake-timeseries-stats.ipynb
 * Loops for ts stats over multiple buffers
 * Add watershed buffer
+* Load in csv to join in Location (site) names
 '''
 
 import os
@@ -36,7 +37,8 @@ use_simplified_classes=False
 
 ## in: base dir = F:\ABoVE2021\Mapping
 # pth_shp_in = '/mnt/f/ABoVE2021/Mapping/shp/ABOVE_coordinates_for_Ethan_10-19-21.shp' # points # temp until I get lake geometries for full dataset!
-pth_shp_in = '/mnt/f/ABoVE2021/Mapping/shp/polygon_geom/ABOVE_coordinates_for_Ethan_10-19-21_jn_PADLakesVis.shp' # polygons
+# pth_shp_in = '/mnt/f/ABoVE2021/Mapping/shp/polygon_geom/ABOVE_coordinates_for_Ethan_10-19-21_jn_PADLakesVis.shp' # polygons
+pth_shp_in = '/mnt/f/ABoVE2021/Mapping/shp/polygon_geom/combined/ABOVE_coordinates_for_Ethan_10-19-21_geom.shp' # polygons
 pth_lc_in = '/mnt/f/Wang-above-land-cover/ABoVE_LandCover_5km_buffer.vrt'
 # pth_lc_in_simp = '/mnt/f/Wang-above-land-cover/ABoVE_LandCover_Simplified_Bh04v01.tif' # simplified 10-calss landcover
 
@@ -198,7 +200,7 @@ def normalizeTimeSeries():
 
 def plotTimeSeries():
     '''
-    Loads 'xlsx_out_norm_pth', manipulates data, and creates a multi-facted time-series plot for each lake from the ABoVE landcover dataset. Saves plots to 'plot_dir'
+    Loads 'xlsx_out_norm_pth', manipulates data, and creates a multi-facted time-series plot for each lake from the ABoVE landcover dataset, plotting in ha, not normalized, by default. Saves plots to 'plot_dir'
     '''
     ## vars
     buf_len = buffer_lengths[0] # use the smallest (90 m) buffer for plotting
@@ -208,7 +210,7 @@ def plotTimeSeries():
     value_name = 'Ha' # 'Percent'
     df = pd.read_excel(xlsx_out_norm_pth, index_col=0)
     dfg = df.groupby('Lake_name') # ['Lake_name', 
-    group = dfg.get_group('Balloon lake') # formerly ('Balloon lake', buf_len)
+    # group = dfg.get_group('Balloon lake') # formerly ('Balloon lake', buf_len)
     
     ## Plot with mpl
     # fig, ax = plt.subplots()
