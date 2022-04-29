@@ -44,7 +44,7 @@ use_simplified_classes=False
 pth_shp_in = '/mnt/f/ABoVE2021/Mapping/shp/polygon_geom/combined/ABOVE_coordinates_for_Ethan_10-19-21_geom.shp' # polygons
 pth_lc_in = '/mnt/f/Wang-above-land-cover/ABoVE_LandCover_5km_buffer.vrt'
 # pth_lc_in_simp = '/mnt/f/Wang-above-land-cover/ABoVE_LandCover_Simplified_Bh04v01.tif' # simplified 10-calss landcover
-
+pth_csv_in = '/mnt/f/ABoVE2021/Mapping/ABOVE_coordinates_for_Ethan_10-19-21_mod.csv' # native (edited) data format from Martin. Used to join in at end
 ## out
 xlsx_out_pth = '/mnt/f/ABoVE2021/Mapping/out/xlsx/' + os.path.basename(pth_shp_in)[:-4] + '_landCoverBuffers.xlsx' # e.g. /mnt/f/ABoVE2021/Mapping/out/xlsx/ABOVE_coordinates_for_Ethan_10-19-21_jn_PADLakesVis_landCoverBuffers.xlsx
 # shp_projected_out_pth = pth_shp_in.replace('_geom.shp', '_albers_geom.shp')
@@ -92,7 +92,7 @@ def extractBufferZonalHist(poly, buffer_lengths):
     ## load raster subset
     with rio.open(pth_lc_in) as src:
         lc, lc_transform = rasterio.mask.mask(src, buffers[-1:], crop=True) # use outermost buffer as mask ROI to avoid loading too much data
-        lc_meta = src.meta
+        lc_meta = src.meta # can also simply use src.read(window=window) if I know the window, rather than the shapefile
         # lc = src.read()
         lc = reshape_as_image(lc)
         src_crs=src.crs
@@ -335,12 +335,33 @@ def extractTimeSeriesFeatures():
         stats[lcClass + '_change'] = dfg[lcClass].apply(lambda group: theilslopes(group)[0]) # Using method from Kuhn et and Butman 2021, PNAS
         stats[lcClass + '_trend'] = dfg[lcClass].apply(lambda group: pymannkendall.original_test(group)[0])
 
+    ## Join in lat/long and location from og-mod csv: load files
+    csv_locs = pd.read_csv(pth_csv_in)
+
+    ## strip whitespace in prep for join, then join
+    csv_locs.Sample_name = csv_locs.Sample_name.map(str.strip)
+    csv_locs.set_index('Sample_name', inplace=True)
+
+    ## rm unnecessary cols
+    joined_cols = ['Location', 'latitude', 'longitude']
+    csv_locs = csv_locs[joined_cols]
+
+    ## join and rename index
+    stats = stats.merge(csv_locs, left_index=True, right_index=True, how='inner', validate='1:1')
+    stats.index.rename('Lake', inplace=True)
+
+    ## Reorder to put meta vars first
+    [stats.insert(0, col, stats.pop(col)) for col in joined_cols[-1::-1]] # re-order cols
+
     ## Write out
-    stats.to_excel(xlsx_out_time_series_features_pth, freeze_panes=(1,3))
+    stats.to_excel(xlsx_out_time_series_features_pth, freeze_panes=(1,2))
     print(f'Wrote time series output table: {xlsx_out_time_series_features_pth}')
 
     ## Save and write out most important stats
-    important_vars = [					
+    important_vars = [
+        'latitude',
+        'longitude',
+        'Location',					
         'Area_m2',
         'Perim_m2',
         'Total_inun_2014',
