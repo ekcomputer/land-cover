@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "land_cover"  # Replace with the name of your package
+version = "0.1"  # Version of your package
+description = "ABoVE3"  # Brief description of your package
+# readme = "README.md"  # Path to your README file, optional
+license = {text = "GNU"}  # License type, can also refer to a file
+authors = [
+  {name = "Ethan Kyzivat", email = "your.email@example.com"}  # Author details
+]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "License :: OSI Approved :: GNU License",
+  "Operating System :: OS Independent"
+]
+keywords = ["land cover", "spatial", "regression", "variography"]  # Relevant keywords
+
+dependencies = [
+  "pandas>=2",  # List your dependencies here
+  "geopandas>=0.14",
+  "pysal",
+  "contextily",
+  "xarray",
+  "rioxarray",
+  "matplotlib",
+  "scipy",
+  "rasterstats",
+  "pymannkendall",
+  "gstools"
+]
+
+requires-python = ">=3.9,<3.13"
+
+[project.optional-dependencies]
+notebook = [
+    "ipykernel"
+]
+
+[tool.setuptools]
+# include_package_data = false  # Whether to include non-Python files as defined in MANIFEST.in
+
+[tool.setuptools.packages.find]
+where = ["."]  # If your packages are inside 'src/', otherwise omit this line
+
+[project.urls]
+homepage = "https://your-package-homepage.com"
+repository = "https://github.com/your/repository"
