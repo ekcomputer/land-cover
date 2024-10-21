@@ -32,7 +32,8 @@ dependencies = [
   "scipy",
   "rasterstats",
   "pymannkendall",
-  "gstools"
+  "gstools",
+  "openpyxl"
 ]
 
 requires-python = ">=3.9,<3.13"
