@@ -34,7 +34,8 @@ dependencies = [
   "pymannkendall",
   "gstools",
   "openpyxl",
-  "cartopy"
+  "cartopy",
+  "pymannkendall",
 ]
 
 requires-python = ">=3.9,<3.13"
