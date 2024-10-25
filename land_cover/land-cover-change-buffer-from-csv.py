@@ -38,7 +38,7 @@ import pymannkendall
 use_simplified_classes=False
 
 ## in: base dir = F:\ABoVE2021\Mapping
-pth_shp_in = '/Volumes/metis/ABOVE3/Tom/Selected_PLD_Lakes_2024-10-21/added_PLD/Efflux_PLD_WBD.shp' # lake polygons
+pth_shp_in = '/Volumes/metis/ABOVE3/Tom/Selected_PLD_Lakes_2024-10-21/added_PLD/Efflux_Bogard_PLD_WBD.shp' # lake polygons
 pth_lc_in = '/Volumes/thebe/Wang-above-land-cover/ABoVE_LandCover_5km_buffer.vrt'
 pth_lc_in_simp = '/Volumes/thebe/Wang-above-land-cover/ABoVE_LandCover_simplified.vrt' # simplified 10-class landcover
 pth_csv_in = '/Volumes/thebe/ABoVE2021/Mapping/ABOVE_coordinates_for_Ethan_10-19-21_mod.csv' # native (edited) data format from Martin. Used to join in at end
@@ -49,7 +49,7 @@ xlsx_out_pth = '/Volumes/metis/ABOVE3/land_cover_joins/out/xlsx/' + os.path.base
 plot_dir = '/Volumes/metis/ABOVE3/land_cover_joins/plots'
 
 ## buffers, in order small -> large
-buffer_lengths = (90, 180) # in m # 90, 990 # 1350
+buffer_lengths = [180] # (90, 180) # in m # 90, 990 # 1350
 
 ## classes for land cover 
 classes =       ['Evergreen Forest','Deciduous Forest',	'Mixed Forest',	'Woodland',	'Low Shrub',	'Tall Shrub',	'Open Shrubs',	'Herbaceous',	'Tussock Tundra',	'Sparsely Vegetated',	'Fen',	'Bog',	'Shallows/littoral',	'Barren',	'Water']
@@ -65,7 +65,17 @@ ds_specific_vars = [ # For Martin OG dataset
     'Location',	
 ]
 
-ds_specific_vars = [ # For Efflux lakes
+# ds_specific_vars = [ # For Efflux lakes
+#     'Lat_DD',
+#     'Lon_DD',	
+#     'AvgOfTempC',
+#     'AvgOfpH',
+#     'AvgOfALKum',
+#     'AvgOfpCO2',
+#     'StDevOfpCO',
+# ]
+
+ds_specific_vars = [ # For Efflux and Bogard lakes
     'Lat_DD',
     'Lon_DD',	
     'AvgOfTempC',
@@ -73,7 +83,11 @@ ds_specific_vars = [ # For Efflux lakes
     'AvgOfALKum',
     'AvgOfpCO2',
     'StDevOfpCO',
-
+    'Name',
+    'Reference',
+    # 'SIMILAR',
+    'mean_bound', # mean_bound_dist
+    'max_bound_',
 ]
 
 important_vars = [ # for 
@@ -428,6 +442,7 @@ def extractTimeSeriesFeatures():
 
 
 if __name__ == '__main__':
+    '''Run join_WBD.ipynb first'''
     # extractTimeSeriesForLakes(pth_shp_in, buffer_lengths, xlsx_out_pth)
     # normalizeTimeSeries(xlsx_out_pth, xlsx_out_norm_pth, classes_wet, classes_dry)
     # plotTimeSeries()
