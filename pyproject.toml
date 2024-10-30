@@ -36,7 +36,8 @@ dependencies = [
   "openpyxl",
   "cartopy",
   "pymannkendall",
-  "dask[dataframe]"
+  "dask[dataframe]",
+  "lonboard"
 ]
 
 requires-python = ">=3.9,<3.13"

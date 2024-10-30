@@ -4,6 +4,15 @@ import cartopy.feature as cfeature
 from cartopy.io import img_tiles
 from matplotlib import pyplot as plt
 from pyproj.crs.crs import CRS
+import lonboard
+# from lonboard import PolygonLayer, ScatterplotLayer
+import warnings
+from IPython.display import display
+from matplotlib.colors import Normalize
+# from palettable.colorbrewer.diverging import PuOr_10_r
+# from palettable.colorbrewer.sequential import Oranges_9, BuPu_6
+# from palettable.colorbrewer.diverging import PuOr_5_r # Earth_3
+# from palettable.matplotlib import Magma_13
 
 def _crs2ccrs(crs):
     epsg_code = crs.to_epsg()
@@ -82,3 +91,20 @@ def plot_basemap(gdf:gpd.GeoDataFrame, crs:CRS=None, color='red', zoom=6, alpha=
 
     # ax.legend(title='Legend', loc='upper right')
     plt.show()
+
+# Custom basemap for `lonboard` plots
+BASEMAP_URL = "https://api.maptiler.com/maps/1cdadb3b-20d8-4473-ac47-f3267fb12411/style.json?key=c7Pwm48hgeayqir5riN6"
+# Enforce custom basemap for `lonboard` plots and try to ignore a reprojection warning.
+def viz(*args, **kwargs):
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="Input being reprojected to EPSG:4326")
+        display(
+            lonboard.viz(*args, **kwargs, map_kwargs={"basemap_style": BASEMAP_URL})
+        )
+
+def Map(*args, **kwargs):
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="Input being reprojected to EPSG:4326")
+        display(
+            lonboard.Map(*args, **kwargs, basemap_style=BASEMAP_URL)
+        )
