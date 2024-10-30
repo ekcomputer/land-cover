@@ -7,6 +7,12 @@ efflux_bogard_dict = {
     'Lat_DD': 'lat',
     'Lon_DD': 'long'}
 
+first_columns = ['AvgOfpCO2', 'Lat_DD', 'Lon_DD', 'Area_m2', 'Perim_m2', 'mean_bound',
+       'max_bound_', 'Perim_area_ratio', 'SDF', 'AvgOfpH', 'AvgOfALKum', 'AvgOfTempC']
+
+cols_to_drop = ['Lake', 'Lat_DD', 'Lon_DD', 'Total_inun_trend', 'Name', 'Reference', 'Dominant_veg_2014',
+       'Dominant_veg_group_2014', 'StDevOfpCO', 'Total_inun_2014']
+
 def loadEfflux():
     return gpd.read_file('/Volumes/metis/ABOVE3/LAKESHAPE/effluxlakes.shp')
 
@@ -40,6 +46,21 @@ def loadBogardMapShp(ABOVE_region=True):
 def loadWBD():
     '''Note: bbox is for AK'''
     return gpd.read_file('/Volumes/thebe/Other/Feng-High-res-inland-surface-water-tundra-boreal-NA/edk_out/fixed_geoms/WBD.shp', engine='pyogrio', bbox = (-170, 51, -125 , 72)) # bbox for NA
+
+
+def loadLandCoverJoined():
+    return pd.read_excel('/Volumes/metis/ABOVE3/land_cover_joins/out/xlsx/Efflux_Bogard_PLD_WBD_landCoverBuffers_core_tsFeatures.xlsx')
+
+
+def sortColumns(df, order=first_columns):
+    for col in order[::-1]:
+        if col in df.columns:
+            df.insert(0, col, df.pop(col))
+    return
+
+
+def dropColumns(df, cols=cols_to_drop):
+    return df[[col for col in df.columns if col not in cols_to_drop]]
 
 
 # gdf = loadEffluxShp()

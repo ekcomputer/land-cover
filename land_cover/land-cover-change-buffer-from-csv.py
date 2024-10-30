@@ -172,13 +172,13 @@ def extractBufferZonalHist(poly, buffer_lengths, classes=classes):
     nclasses = len(classes)
 
     ## Loop
-    for j, ring in enumerate(buffers):
+    for j, ring in enumerate(buffers): # note that buffer is a closed shape, not a ring!
         for i, year in enumerate(range(nYears)):
             
             ## Zonal stats. Source: https://automating-gis-processes.github.io/CSC/notebooks/L5/zonal-statistics.html
             stat = zonal_stats(ring, lc[:,:,i], affine=lc_transform, stats='count unique', add_stats={'histogram': lambda data: _my_hist(data, nclasses)}, nodata=255) # could use count_unique=True option, but I want zeros in my histograms
             # array[i,:,j] = stat[0]['histogram']
-            dfba = pd.concat((dfba, pd.DataFrame(stat[0]['histogram'][np.newaxis, :] * np.prod(src_res)/10000, columns=classes)), ignore_index=True, verify_integrity=True)
+            dfba = pd.concat((dfba, pd.DataFrame(stat[0]['histogram'][np.newaxis, :] * np.prod(src_res)/10000, columns=classes)), ignore_index=True, verify_integrity=True) # TODO: divide by 1e6, not 1e5, right?
             dfba.loc[n, 'Year'] = years[i]
             dfba.loc[n, 'Buffer_m'] = buffer_lengths[j]
             dfba.loc[n, 'Lake_name'] = poly.index.values
@@ -424,7 +424,7 @@ def extractTimeSeriesFeatures():
     stats.index.rename('Lake', inplace=True) # Note the 'lake' corresponds to index in pth_shp_in (arbitrary index after concatennating PLD and WBD lakes)
 
     ## Reorder to put meta vars first
-    [stats.insert(0, col, stats.pop(col)) for col in joined_cols[-1::-1]] # re-order cols
+    [stats.insert(0, col, stats.pop(col)) for col in joined_cols[-1::-1]] # re-order cols # TODO import load.sortColumns
 
     ## Write out
     stats.to_excel(xlsx_out_time_series_features_pth, freeze_panes=(1,2))
