@@ -13,6 +13,9 @@ first_columns = ['AvgOfpCO2', 'Lat_DD', 'Lon_DD', 'Area_m2', 'Perim_m2', 'mean_b
 cols_to_drop = ['Lake', 'Lat_DD', 'Lon_DD', 'Total_inun_trend', 'Name', 'Reference', 'Dominant_veg_2014',
        'Dominant_veg_group_2014', 'StDevOfpCO', 'Total_inun_2014']
 
+plot_dir = "/Volumes/metis/ABOVE3/fig"
+
+
 def loadEfflux():
     return gpd.read_file('/Volumes/metis/ABOVE3/LAKESHAPE/effluxlakes.shp')
 
@@ -61,6 +64,22 @@ def sortColumns(df, order=first_columns):
 
 def dropColumns(df, cols=cols_to_drop):
     return df[[col for col in df.columns if col not in cols_to_drop]]
+
+
+def loadKurek():
+    dataset_path = "/Volumes/metis/ABOVE3/Kurek_GBC22_data/out/Kurek_ABoVE Lakes DOM_GBC_2023_Table S1.csv"
+    shorelines_path = "/Volumes/metis/ABOVE3/Kurek_GBC22_data/out/shorelines/ABOVE_coordinates_for_Ethan_10-19-21_geom.shp"
+
+    df_csv = pd.read_csv(dataset_path)
+    gdf_shp = gpd.read_file(shorelines_path)
+    merged = df_csv.merge(
+        gdf_shp, left_on="Match_name", right_on="Sample_nam", how="left", indicator=False
+    )
+    # merged.rename(columns={"Note": "Digitizing note"})
+    merged.rename(columns=dict(zip(gdf_shp.columns, ['dig_' + col for col in gdf_shp.columns if col != 'geometry'])), inplace=True)
+    merged = gpd.GeoDataFrame(merged, crs=gdf_shp.crs)
+    merged['lake_area_km2'] = merged.area / 1e6
+    return merged
 
 
 # gdf = loadEffluxShp()

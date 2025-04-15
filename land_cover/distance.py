@@ -19,7 +19,7 @@ def calcMeanBoundDistSerial(gdf, include_max=False, num_samples=1000):
 
 
 @delayed
-def calc_bound_dist_for_feature(feature, crs, num_samples=1000, include_max=False):
+def _calc_bound_dist_for_feature(feature, crs, num_samples=1000, include_max=False):
     rand_pts = pp.random.poisson(feature, size=num_samples)
     rand_pts_gs = gpd.GeoSeries([Point(pt) for pt in rand_pts], crs=crs)
     
@@ -34,8 +34,8 @@ def calcMeanBoundDist(gdf, include_max=False, num_samples=1000):
     tasks = []
     
     # Loop over each feature, creating delayed tasks for parallel execution
-    for i, feature in enumerate(tqdm(gdf['geometry'])):
-        task = calc_bound_dist_for_feature(feature, gdf.crs, num_samples, include_max)
+    for i, feature in enumerate(gdf['geometry']):
+        task = _calc_bound_dist_for_feature(feature, gdf.crs, num_samples, include_max)
         tasks.append(task)
 
     # Compute all tasks in parallel
