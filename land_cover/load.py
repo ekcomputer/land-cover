@@ -6,15 +6,12 @@ efflux_bogard_dict = {
     'AvgOfpCO2':'pco2uatm',
     'Lat_DD': 'lat',
     'Lon_DD': 'long'}
-
 first_columns = ['AvgOfpCO2', 'Lat_DD', 'Lon_DD', 'Area_m2', 'Perim_m2', 'mean_bound',
        'max_bound_', 'Perim_area_ratio', 'SDF', 'AvgOfpH', 'AvgOfALKum', 'AvgOfTempC']
-
 cols_to_drop = ['Lake', 'Lat_DD', 'Lon_DD', 'Total_inun_trend', 'Name', 'Reference', 'Dominant_veg_2014',
        'Dominant_veg_group_2014', 'StDevOfpCO', 'Total_inun_2014']
-
 plot_dir = "/Volumes/metis/ABOVE3/fig"
-
+kurek_bounds = [-156.8973100000000045, 58.3921899999999994, -111.0319899999999933, 71.2416300000000007]
 
 def loadEfflux():
     return gpd.read_file('/Volumes/metis/ABOVE3/LAKESHAPE/effluxlakes.shp')
@@ -81,6 +78,50 @@ def loadKurek():
     merged['lake_area_km2'] = merged.area / 1e6
     return merged
 
+
+# def loadLiu():
+#     df_csv = pd.read_csv("/Volumes/metis/Datasets/Liu_aq_veg/figshare/MA.csv")
+
+def loadGreenness(bounds=None):
+    """working file with Liu and Khun greenness. Needs refreshing."""
+    engine=None
+    if bounds=='kurek':
+        bounds = kurek_bounds
+        engine='fiona'
+    else:
+        bounds=None
+    gdf = gpd.read_file(
+        "/Volumes/metis/Datasets/Liu_aq_veg/figshare/edk_out/join_hl_greenness/greennessx2.shp",
+        bounds=bounds, engine=engine
+    )
+    gdf.rename(
+        columns=dict(
+            zip(
+                [
+                    "trends_198",
+                    "trends_1_1",
+                    "trends_1_2",
+                    "trends_1_3",
+                    "trends_1_4",
+                    "Liu MA_are",
+                    "Liu MA_a_1",
+                    "Liu MA_a_2",
+                ],
+                [
+                    "green_sen_slope",
+                    "green_mann_kendall_trend",
+                    "green_trend_significance",
+                    "green_b2_mean",
+                    "green_b2_stddev",
+                    "MA_p1",
+                    "MA_p1",
+                    "MA_p1",
+                ],
+            )
+        ),
+        inplace=True,
+    )
+    return gdf
 
 # gdf = loadEffluxShp()
 # gdf = loadWBD()
