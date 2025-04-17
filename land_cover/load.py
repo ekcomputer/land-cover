@@ -114,8 +114,8 @@ def loadGreenness(bounds=None):
                     "green_b2_mean",
                     "green_b2_stddev",
                     "MA_p1",
-                    "MA_p1",
-                    "MA_p1",
+                    "MA_p2",
+                    "MA_p3",
                 ],
             )
         ),
