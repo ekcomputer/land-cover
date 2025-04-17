@@ -13,6 +13,9 @@ cols_to_drop = ['Lake', 'Lat_DD', 'Lon_DD', 'Total_inun_trend', 'Name', 'Referen
 plot_dir = "/Volumes/metis/ABOVE3/fig"
 kurek_bounds = [-156.8973100000000045, 58.3921899999999994, -111.0319899999999933, 71.2416300000000007]
 
+## Outputs
+aleb_landcover_greenness_spatial = "/Volumes/metis/ABOVE3/land_cover_joins/out/shp/Efflux_Bogard_PLD_WBD_landCoverBuffers_core_tsFeatures_greenx2.gpkg"
+
 def loadEfflux():
     return gpd.read_file('/Volumes/metis/ABOVE3/LAKESHAPE/effluxlakes.shp')
 
@@ -51,6 +54,17 @@ def loadWBD():
 def loadLandCoverJoined():
     return pd.read_excel('/Volumes/metis/ABOVE3/land_cover_joins/out/xlsx/Efflux_Bogard_PLD_WBD_landCoverBuffers_core_tsFeatures.xlsx')
 
+
+def loadLandCoverJoinedShp():
+    df = pd.read_excel(
+        "/Volumes/metis/ABOVE3/land_cover_joins/out/xlsx/Efflux_Bogard_PLD_WBD_landCoverBuffers_core_tsFeatures.xlsx"
+    )
+    gdf = gpd.read_file(
+        "/Volumes/metis/ABOVE3/land_cover_joins/out/shp/Efflux_Bogard_PLD_WBD_landCoverBuffers_core_tsFeatures.shp"
+    )
+    return gpd.GeoDataFrame(df, geometry=gdf.geometry, crs=gdf.crs)
+
+loadLandCoverJoinedShp()
 
 def sortColumns(df, order=first_columns):
     for col in order[::-1]:
