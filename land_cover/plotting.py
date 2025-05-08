@@ -1,4 +1,5 @@
 import geopandas as gpd
+import numpy as np
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from cartopy.io import img_tiles
@@ -9,6 +10,9 @@ import lonboard
 import warnings
 from IPython.display import display
 from matplotlib.colors import Normalize
+import seaborn as sns
+from scipy.stats import pearsonr
+
 # from palettable.colorbrewer.diverging import PuOr_10_r
 # from palettable.colorbrewer.sequential import Oranges_9, BuPu_6
 # from palettable.colorbrewer.diverging import PuOr_5_r # Earth_3
@@ -108,3 +112,18 @@ def Map(*args, **kwargs):
         display(
             lonboard.Map(*args, **kwargs, basemap_style=BASEMAP_URL)
         )
+
+
+def add_corr_line(x, y, **kwargs):
+    """use with pairplot g.map"""
+    ax = plt.gca()
+    sns.regplot(x=x, y=y, scatter=False, ax=ax, color="red")
+    r, _ = pearsonr(x, y)
+    ax.annotate(f"r = {r:.2f}", xy=(0.05, 0.9), xycoords="axes fraction")
+
+
+def add_r2(x, y, xy=(0.05, 0.9), **kwargs):
+    ax = plt.gca()
+    mask = ~np.isnan(x) & ~np.isnan(y)
+    r, _ = pearsonr(x[mask], y[mask])
+    ax.annotate(f"$r^2 =$ {r**2:.2f}", xy, xycoords="axes fraction", **kwargs)
