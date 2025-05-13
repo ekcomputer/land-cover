@@ -37,7 +37,8 @@ dependencies = [
   "cartopy",
   "pymannkendall",
   "dask[dataframe]",
-  "lonboard"
+  "lonboard",
+  "python-ternary",
 ]
 
 requires-python = ">=3.9,<3.13"

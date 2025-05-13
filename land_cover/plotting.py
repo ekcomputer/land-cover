@@ -114,12 +114,15 @@ def Map(*args, **kwargs):
         )
 
 
-def add_corr_line(x, y, **kwargs):
+def add_corr_line(x, y, xy=(0.05, 0.9), add_line=True, **kwargs):
     """use with pairplot g.map"""
     ax = plt.gca()
-    sns.regplot(x=x, y=y, scatter=False, ax=ax, color="red")
-    r, _ = pearsonr(x, y)
-    ax.annotate(f"r = {r:.2f}", xy=(0.05, 0.9), xycoords="axes fraction")
+    if add_line is True:
+        sns.regplot(x=x, y=y, scatter=False, ax=ax, color="red")
+    mask = ~np.isnan(x) & ~np.isnan(y)
+    if sum(mask) > 2:
+        r, _ = pearsonr(x[mask], y[mask])
+        ax.annotate(f"$r^2 =$ {r**2:.2f}", xy, xycoords="axes fraction", **kwargs)
 
 
 def add_r2(x, y, xy=(0.05, 0.9), **kwargs):

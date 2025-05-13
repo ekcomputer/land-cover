@@ -105,8 +105,9 @@ def loadGreenness(bounds=None):
     else:
         bounds=None
     gdf = gpd.read_file(
-        "/Volumes/metis/Datasets/Liu_aq_veg/figshare/edk_out/join_hl_greenness/greennessx2.shp",
-        bounds=bounds, engine=engine
+        "/Volumes/metis/Datasets/Liu_aq_veg/figshare/original-private-repo/edk_out/join_hl_greenness/greennessx2.shp",
+        bounds=bounds,
+        engine=engine,
     )
     gdf.rename(
         columns=dict(
