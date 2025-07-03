@@ -11,6 +11,13 @@ from geopy.geocoders import Nominatim
 from shapely.geometry import Point, shape
 from shapely.ops import transform
 from tqdm import tqdm
+from pathlib import Path
+
+wd = Path("/Volumes/metis/ABOVE3/Bogard_suppl_data")
+out_dir = wd / "edk_out"
+bogard_esm_pth = out_dir / "Bogard19_ESM_alldata_wh.csv"
+out_gdb_pth = out_dir / "shp" / "Bogard19_ESM_alldata_wh_geocoded.gpkg"
+out_shp_pth = out_dir / "shp" / "Bogard19_ESM_alldata_wh_geocoded.shp"
 
 USER_AGENT = "edk"
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
@@ -112,7 +119,7 @@ def nearest_distance(lat_lon, polygon):
 
 
 if __name__ == "__main__":
-    df = pd.read_csv("/Volumes/metis/ABOVE3/Bogard_suppl_data/edk_out/Bogard19_ESM_alldata_wh.csv")
+    df = pd.read_csv(bogard_esm_pth)
     # df = df[94:100]  # temp
     geojson_list, names, lats, lons, place_ids, osm_ids = [], [], [], [], [], []
     for idx, row in tqdm(df.iterrows(), total=len(df)):
@@ -154,10 +161,17 @@ if __name__ == "__main__":
 
     gdf = gdf.to_crs("ESRI:102001")  # Canada Albers Equal Area Conic projection
 
-    # Write to shapefile
+    # Write to geoPackage and CSV
     gdf.to_file(
         "/Volumes/metis/ABOVE3/Bogard_suppl_data/edk_out/shp/Bogard19_ESM_alldata_wh_geocoded.gpkg"
     )
-    # df_filtered.to_csv(
-    #     "/Volumes/metis/ABOVE3/Bogard_suppl_data/edk_out/Bogard19_ESM_alldata_wh_geocoded.csv", index=False
-    # )
+    gdf.to_file(
+            "/Volumes/metis/ABOVE3/Bogard_suppl_data/edk_out/shp/Bogard19_ESM_alldata_wh_geocoded.shp"
+        )
+    df.drop(columns="geometry").to_csv(
+        "/Volumes/metis/ABOVE3/Bogard_suppl_data/edk_out/Bogard19_ESM_alldata_wh_geocoded.csv",
+        index=False,
+        encoding="utf-8-sig",
+    )
+    print(f"Geocoded {df_filtered.shape[0]} out of {df.shape[0]} features.")
+    pass

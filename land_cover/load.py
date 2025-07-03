@@ -2,6 +2,7 @@ import pandas as pd
 import pandas as pd
 import geopandas as gpd
 
+gee_table_pth = "/Volumes/metis/ABOVE3/Tom/gee_input/gee_cleaned_sample_data_2025-03-06.csv"
 efflux_bogard_dict = {
     'AvgOfpCO2':'pco2uatm',
     'Lat_DD': 'lat',
