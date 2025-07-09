@@ -15,7 +15,7 @@ from shapely.geometry import Point, Polygon, shape
 from shapely.ops import transform
 from tqdm import tqdm
 
-from land_cover.load import loadBogardMapLakesGEE
+from land_cover.load import loadBogardSuppl, loadDranga17
 
 USER_AGENT = "edk"
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
@@ -23,7 +23,11 @@ GEONAMES_USERNAME = "ekyzivat"  # Replace with your actual username
 GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
 
 # list of prefixes for lake names to not geolocate
-BAD_PREFIXES = ["JR", "WB", "DV", "E5", "HW", "s1", "F1", "F2", "E5", "RDC"]
+BAD_PREFIXES = ["JR", "WB", "DV", "E5", "HW", "s1", "F1", "F2", "E5", "RDC"] # from Bogard
+BAD_PREFIXES += [
+    "MB", "SL", "Cl", "MR", "CV", "MQ", "SP", "KR", "WB", "Pond", "TK", "AX", "BK",
+    "MV", "EP", "BA", "CH", "IQ", "BL", "AV", "RA",
+    ] # from Dranga
 OSM_WATER_NAMES = ["water", "lake", "pond", "reservoir", "wetland", "spring", "bay"]
 GEONAMES_WATER_TYPES = ["lake"]
 GOOGLE_WATER_CLASSES = ["natural_feature"]
@@ -357,12 +361,19 @@ def geocode_file(load_function, name_field, lat_field, lon_field, version="test1
 
 
 if __name__ == "__main__":
-    ## User params
-    version = "test1"
-    load_function = loadBogardMapLakesGEE
-    name_field = "lake name provided"
-    lat_field = "lat (decimal)"
-    lon_field = "long (decimal)"
+    ## User params for Bogard
+    # version = "v3"
+    # load_function = loadBogardSuppl
+    # name_field = "lake name provided"
+    # lat_field = "lat (decimal)"
+    # lon_field = "long (decimal)"
+
+    ## User params for Dranga
+    version = "v3"
+    load_function = loadDranga17
+    name_field = "Lake"
+    lat_field = "Latitude"
+    lon_field = "Longitude"
 
     ## Run
     geocode_file(load_function, name_field, lat_field, lon_field, version)

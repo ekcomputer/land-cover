@@ -48,10 +48,20 @@ def loadBogardMapShp(ABOVE_region=True):
     return gdf    
 
 
-def loadBogardMapLakesGEE():
-    """Western hemisphere only, No PLD matches included"""
+def loadBogardSuppl():
+    """Western hemisphere only, data direct from paper SI"""
     wd = Path("/Volumes/metis/ABOVE3/Bogard_suppl_data")
     filename = "Bogard19_ESM_alldata_wh"
+    out_dir = wd / "edk_out"
+    csv_in_pth = out_dir / f"{filename}.csv"
+    df = pd.read_csv(csv_in_pth)
+    return df, out_dir, filename
+
+
+def loadDranga17():
+    """Note: companion csv with MDL and og excel with full field descriptions"""
+    wd = Path("/Volumes/metis/Datasets/Dranga-2017")
+    filename = "as-2017-0039suppla"
     out_dir = wd / "edk_out"
     csv_in_pth = out_dir / f"{filename}.csv"
     df = pd.read_csv(csv_in_pth)
