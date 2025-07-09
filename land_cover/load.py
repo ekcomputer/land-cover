@@ -1,6 +1,7 @@
 import pandas as pd
 import pandas as pd
 import geopandas as gpd
+from pathlib import Path
 
 gee_table_pth = "/Volumes/metis/ABOVE3/Tom/gee_input/gee_cleaned_sample_data_2025-03-06.csv"
 efflux_bogard_dict = {
@@ -45,6 +46,16 @@ def loadBogardMapShp(ABOVE_region=True):
     gdf = gdf.groupby('lake_id').first().reset_index() # hot fix to remove dups
     gdf.crs = gdf_jn_PLD.crs
     return gdf    
+
+
+def loadBogardMapLakesGEE():
+    """Western hemisphere only, No PLD matches included"""
+    wd = Path("/Volumes/metis/ABOVE3/Bogard_suppl_data")
+    filename = "Bogard19_ESM_alldata_wh"
+    out_dir = wd / "edk_out"
+    csv_in_pth = out_dir / f"{filename}.csv"
+    df = pd.read_csv(csv_in_pth)
+    return df, out_dir, filename
 
 
 def loadWBD():

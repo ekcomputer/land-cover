@@ -15,17 +15,13 @@ from shapely.geometry import Point, Polygon, shape
 from shapely.ops import transform
 from tqdm import tqdm
 
-wd = Path("/Volumes/metis/ABOVE3/Bogard_suppl_data")
-out_dir = wd / "edk_out"
-bogard_esm_pth = out_dir / "Bogard19_ESM_alldata_wh.csv"
-out_gdb_pth = out_dir / "shp" / "Bogard19_ESM_alldata_wh_geocoded.gpkg"
-out_shp_pth = out_dir / "shp" / "Bogard19_ESM_alldata_wh_geocoded.shp"
+from land_cover.load import loadBogardMapLakesGEE
 
 USER_AGENT = "edk"
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 GEONAMES_USERNAME = "ekyzivat"  # Replace with your actual username
 GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
-VERSION = "v3"
+
 # list of prefixes for lake names to not geolocate
 BAD_PREFIXES = ["JR", "WB", "DV", "E5", "HW", "s1", "F1", "F2", "E5", "RDC"]
 OSM_WATER_NAMES = ["water", "lake", "pond", "reservoir", "wetland", "spring", "bay"]
@@ -254,8 +250,12 @@ def verified_polygon(name: str, lat_lon=None, within=5, limit=5, country_codes=[
     return {}, np.nan  # or None?
 
 
-if __name__ == "__main__":
-    df = pd.read_csv(bogard_esm_pth)
+def geocode_file(load_function, name_field, lat_field, lon_field, version="test1"):
+    df, out_dir, file_name = load_function()
+    os.makedirs(out_dir / "shp", exist_ok=True)
+    out_csv_stem = out_dir / f"{file_name}_geocoded_{version}"
+    out_spatial_stem = out_dir / "shp" / f"{file_name}_geocoded_{version}"
+
     # df = df[94:200]  # temp, starts at geojosn matches
     # df = df[500:510]  # temp
     (
@@ -282,8 +282,8 @@ if __name__ == "__main__":
         [],
     )
     for idx, row in tqdm(df.iterrows(), total=len(df)):
-        lake_name = row["lake name provided"]
-        lat_lon = [row["lat (decimal)"], row["long (decimal)"]]
+        lake_name = row[name_field]
+        lat_lon = [row[lat_field], row[lon_field]]
         use_geocoder = isinstance(lake_name, str) and (
             (lake_name[:1].isalpha()) and (not np.isin(lake_name[:2], BAD_PREFIXES))
         )
@@ -322,7 +322,7 @@ if __name__ == "__main__":
             has_polygons.append(False)
             print("Skipping geocoding for: ", lake_name)
 
-    # OSM fields
+    # Geocoder fields based on OSM
     df["geometry"] = polygon_list
     df["geocode_full_name"] = names
     df["geocode_lat"] = lats
@@ -333,7 +333,6 @@ if __name__ == "__main__":
     df["geocode_item_type"] = types
     df["geocode_geom"] = has_polygons
     df["geocoder"] = geocoders
-    # Geonames fields
 
     df_filtered = df[df["geocode_lat"].notnull()]
     gdf = gpd.GeoDataFrame(df, crs="EPSG:4326")
@@ -346,16 +345,24 @@ if __name__ == "__main__":
     # gdf = gdf.to_crs("ESRI:102001")  # Canada Albers Equal Area Conic projection
 
     # Write to geoPackage and CSV
-    gdf.to_file(
-        f"/Volumes/metis/ABOVE3/Bogard_suppl_data/edk_out/shp/Bogard19_ESM_alldata_wh_geocoded_{VERSION}.gpkg"
-    )
-    gdf.to_file(
-        f"/Volumes/metis/ABOVE3/Bogard_suppl_data/edk_out/shp/Bogard19_ESM_alldata_wh_geocoded_{VERSION}.shp"
-    )
+    gdf.to_file(f"{out_spatial_stem}.gpkg")
+    gdf.to_file(f"{out_spatial_stem}.shp")
     df.drop(columns="geometry").to_csv(
-        f"/Volumes/metis/ABOVE3/Bogard_suppl_data/edk_out/Bogard19_ESM_alldata_wh_geocoded_{VERSION}.csv",
+        f"{out_csv_stem}.csv",
         index=False,
         encoding="utf-8-sig",
     )
     print(f"Geocoded {df_filtered.shape[0]} out of {df.shape[0]} features.")
     pass
+
+
+if __name__ == "__main__":
+    ## User params
+    version = "test1"
+    load_function = loadBogardMapLakesGEE
+    name_field = "lake name provided"
+    lat_field = "lat (decimal)"
+    lon_field = "long (decimal)"
+
+    ## Run
+    geocode_file(load_function, name_field, lat_field, lon_field, version)
