@@ -1,3 +1,4 @@
+import os
 import time
 from pathlib import Path
 
@@ -13,7 +14,6 @@ from geopy.geocoders.google import GoogleV3
 from shapely.geometry import Point, Polygon, shape
 from shapely.ops import transform
 from tqdm import tqdm
-import os
 
 wd = Path("/Volumes/metis/ABOVE3/Bogard_suppl_data")
 out_dir = wd / "edk_out"
@@ -25,10 +25,12 @@ USER_AGENT = "edk"
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 GEONAMES_USERNAME = "ekyzivat"  # Replace with your actual username
 GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
-VERSION = "v2"
+VERSION = "v3"
 # list of prefixes for lake names to not geolocate
 BAD_PREFIXES = ["JR", "WB", "DV", "E5", "HW", "s1", "F1", "F2", "E5", "RDC"]
-
+OSM_WATER_NAMES = ["water", "lake", "pond", "reservoir", "wetland", "spring", "bay"]
+GEONAMES_WATER_TYPES = ["lake"]
+GOOGLE_WATER_CLASSES = ["natural_feature"]
 # nominatim_geolocator = Nominatim(user_agent=USER_AGENT)
 # nominatim_geocode = RateLimiter(nominatim_geolocator.geocode, min_delay_seconds=1)
 google_geolocator = GoogleV3(api_key=GOOGLE_MAPS_API_KEY)
@@ -145,6 +147,8 @@ def verified_polygon(name: str, lat_lon=None, within=5, limit=5, country_codes=[
             geojson = item.get("geojson") if "geojson" in item else None
             item["geocoder"] = "nominatim"
             item["geocode_id"] = item.get("osm_id")
+            if np.isin(item["type"], OSM_WATER_NAMES, invert=True):
+                continue
             # Get distane to geojson polygon
             if geojson and geojson["type"] == "Polygon":
                 try:
@@ -158,8 +162,7 @@ def verified_polygon(name: str, lat_lon=None, within=5, limit=5, country_codes=[
                 except Exception:
                     continue
             else:
-                # if only points are returned (need to verify this is possible and that it would give different
-                # or more complete results than if geojson is just a point)
+                # if geojson is a point, redo just to be safe
                 results = query_nominatim(name, limit=limit, polygon_geojson=0)
                 if lat_lon is None:
                     return item, np.nan
@@ -182,6 +185,8 @@ def verified_polygon(name: str, lat_lon=None, within=5, limit=5, country_codes=[
     if len(results_gn) > 0:
         for item in results_gn:
             try:
+                if np.isin(item["fcodeName"], GEONAMES_WATER_TYPES, invert=True):
+                    continue
                 lat = float(item["lat"])
                 lon = float(item["lng"])
                 # format for consistency
@@ -232,6 +237,8 @@ def verified_polygon(name: str, lat_lon=None, within=5, limit=5, country_codes=[
                 )
                 item["geocode_id"] = location.raw["place_id"]
                 item["class"] = location.raw["types"][1] if len(location.raw["types"]) > 0 else None
+                if np.isin(item["class"], GOOGLE_WATER_CLASSES, invert=True):
+                    continue
                 item["type"] = location.raw["geometry"]["location_type"]  # e.g. APPROXIMATE
                 polygon = Point(lon, lat)
                 if lat_lon is None:
