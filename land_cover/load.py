@@ -1,7 +1,7 @@
-import pandas as pd
-import pandas as pd
-import geopandas as gpd
 from pathlib import Path
+
+import geopandas as gpd
+import pandas as pd
 
 gee_table_pth = "/Volumes/metis/ABOVE3/Tom/gee_input/gee_cleaned_sample_data_2025-03-06.csv"
 efflux_bogard_dict = {
@@ -14,6 +14,17 @@ cols_to_drop = ['Lake', 'Lat_DD', 'Lon_DD', 'Total_inun_trend', 'Name', 'Referen
        'Dominant_veg_group_2014', 'StDevOfpCO', 'Total_inun_2014']
 plot_dir = "/Volumes/metis/ABOVE3/fig"
 kurek_bounds = [-156.8973100000000045, 58.3921899999999994, -111.0319899999999933, 71.2416300000000007]
+
+# Current paths
+GLAKES_filtered_fix_aqveg_dir = Path(
+    "/Volumes/metis/Datasets/Liu_aq_veg/figshare/original-private-repo/edk_out/GLAKES_filtered_fix_aqveg.shp"
+)
+GLAKES_filtered_fix_aqveg_dist_pth = Path(
+    "/Volumes/metis/Datasets/Liu_aq_veg/figshare/original-private-repo/edk_out/GLAKES_filtered_fix_aqveg_dist.shp"
+)
+greennessx2_pth = Path(
+    "/Volumes/metis/Datasets/Liu_aq_veg/figshare/original-private-repo/edk_out/join_hl_greenness/greennessx2.gpkg"
+)
 
 ## Outputs
 aleb_landcover_greenness_spatial = "/Volumes/metis/ABOVE3/land_cover_joins/out/shp/Efflux_Bogard_PLD_WBD_landCoverBuffers_core_tsFeatures_greenx2.gpkg"
@@ -86,7 +97,6 @@ def loadLandCoverJoinedShp():
     )
     return gpd.GeoDataFrame(df, geometry=gdf.geometry, crs=gdf.crs)
 
-loadLandCoverJoinedShp()
 
 def sortColumns(df, order=first_columns):
     for col in order[::-1]:
@@ -115,11 +125,30 @@ def loadKurek():
     return merged
 
 
-# def loadLiu():
-#     df_csv = pd.read_csv("/Volumes/metis/Datasets/Liu_aq_veg/figshare/MA.csv")
+def loadLiu():
+    gdf = gpd.read_file(GLAKES_filtered_fix_aqveg_dir)
+    return gdf
+
+
+def loadKuhnGreenness():
+    hydrolakes_shp = (
+        "/Volumes/thebe/HydroLAKES_polys_v10_shp/HydroLAKES_polys_v10_shp/HydroLAKES_polys_v10.shp"
+    )
+    kuhn_txt = "/Volumes/metis/Datasets/Kuhn-lake-greenness/ABoVE_GrowingSeason_Lake_Color_1866/data/trends_1984_2019_landsat_ABoVE_lake_greenness.txt"
+
+    gdf_hl = gpd.read_file(hydrolakes_shp)
+    df_kuhn = pd.read_csv(kuhn_txt)
+
+    df_kuhn = df_kuhn.rename(columns={"hylak_id": "Hylak_id"})
+    merged = gdf_hl.merge(df_kuhn, on="Hylak_id", how="inner")
+    return merged
+
 
 def loadGreenness(bounds=None):
-    """working file with Liu and Khun greenness. Needs refreshing."""
+    """working file with Liu and Khun greenness..
+
+    Kuhn fields: continent,country,hylak_id,latitude,longitude,sen_slope,mann_kendall_trend,trend_significance,b2_mean,b2_stddev
+    """
     engine=None
     if bounds=='kurek':
         bounds = kurek_bounds
@@ -127,7 +156,7 @@ def loadGreenness(bounds=None):
     else:
         bounds=None
     gdf = gpd.read_file(
-        "/Volumes/metis/Datasets/Liu_aq_veg/figshare/original-private-repo/edk_out/join_hl_greenness/greennessx2.shp",
+        greennessx2_pth,
         bounds=bounds,
         engine=engine,
     )
