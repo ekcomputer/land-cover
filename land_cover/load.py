@@ -145,7 +145,7 @@ def loadKuhnGreenness():
 
 
 def loadGreenness(bounds=None):
-    """working file with Liu and Khun greenness..
+    """Loads working file with Liu and Khun greenness to a custom spatial domain and field names
 
     Kuhn fields: continent,country,hylak_id,latitude,longitude,sen_slope,mann_kendall_trend,trend_significance,b2_mean,b2_stddev
     """
@@ -188,6 +188,29 @@ def loadGreenness(bounds=None):
         inplace=True,
     )
     return gdf
+
+
+def loadGlobathy():
+    df = pd.read_csv(
+        "/Volumes/thebe/Other/Khazaei-GLOBathy/GLOBathy_basic_parameters/GLOBathy_basic_parameters(ALL_LAKES).csv"
+    ).drop(
+        columns=[
+            "Lake_name",
+            "Country",
+            "Pour_long",
+            "Pour_lat",
+            "HYBAS_ID_LVL1",
+            "HYBAS_ID_LVL2",
+            "HYBAS_ID_LVL3",
+            "Dmax_box_m",
+            "Dmax_cone_m",
+            "Dmax_prism_m",
+            "Dmax_ellip_m",
+            "Dmax_est_PA_m",
+        ]
+    )
+    return df
+
 
 # gdf = loadEffluxShp()
 # gdf = loadWBD()
