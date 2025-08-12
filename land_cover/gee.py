@@ -57,6 +57,8 @@ def merge_asset_tables_to_gdf(asset_folder):
     if gdfs:
         merged_gdf = pd.concat(gdfs, ignore_index=True)
         merged_gdf = gpd.GeoDataFrame(merged_gdf, geometry="geometry", crs="EPSG:4326")
+        # revise sample UID for cases where I manually changed it
+        merged_gdf["sampleUID"] = merged_gdf["sampleUID"].apply(lambda txt: txt[:-1] if txt.endswith("_") else txt)
         return merged_gdf
     else:
         return gpd.GeoDataFrame()
