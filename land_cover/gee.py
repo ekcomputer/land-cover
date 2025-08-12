@@ -41,6 +41,7 @@ def ee_table_to_gdf(asset_id):
         props["geometry"] = geom
         rows.append(props)
         if props["savetype"] == "MatchedManuallyDrawnPolygonThisSession":
+            # just an option to pause and inspect
             pass
     gdf = gpd.GeoDataFrame(rows, geometry="geometry", crs="EPSG:4326")
     return gdf
@@ -69,3 +70,4 @@ if __name__ == "__main__":
     print(merged_gdf)
     timestamp = datetime.now().strftime("%Y%m%d")
     merged_gdf.to_file(f"{local_output_dir}/merged_asset_tables_{timestamp}.shp")
+    print("done")

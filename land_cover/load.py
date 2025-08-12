@@ -4,6 +4,9 @@ import geopandas as gpd
 import pandas as pd
 
 gee_table_pth = "/Volumes/metis/ABOVE3/Tom/gee_input/gee_cleaned_sample_data_2025-03-06.csv"
+bogard_output_path_raw = (
+    "/Volumes/metis/ABOVE3/Digitizing/gee_asset_download/merged_asset_tables_20250812.shp"
+)
 efflux_bogard_dict = {
     'AvgOfpCO2':'pco2uatm',
     'Lat_DD': 'lat',
@@ -20,7 +23,7 @@ GLAKES_filtered_fix_aqveg_dir = Path(
     "/Volumes/metis/Datasets/Liu_aq_veg/figshare/original-private-repo/edk_out/GLAKES_filtered_fix_aqveg.shp"
 )
 GLAKES_filtered_fix_aqveg_dist_pth = Path(
-    "/Volumes/metis/Datasets/Liu_aq_veg/figshare/original-private-repo/edk_out/GLAKES_filtered_fix_aqveg_dist.gpk"
+    "/Volumes/metis/Datasets/Liu_aq_veg/figshare/original-private-repo/edk_out/GLAKES_filtered_fix_aqveg_dist.gpkg"
 )
 greennessx2_pth = Path(
     "/Volumes/metis/Datasets/Liu_aq_veg/figshare/original-private-repo/edk_out/join_hl_greenness/greennessx2.gpkg"
@@ -42,12 +45,15 @@ def loadEffluxShp():
     return gdf
 
 
-def loadBogardMapShp(ABOVE_region=True):
+def loadBogardMapShp(ABOVE_region=True, region=None):
     '''Loads all lakes with matchup, even if in Europe'''
     if ABOVE_region:
         bbox = (-170, 51, -127 , 72) # W NA
     else:
-        bbox = None
+        if region=="WH":
+            bbox = (-180, 1, -13, 90)  # W NA
+        else:
+            bbox = None
     gdf_jn_PLD = gpd.read_file('/Volumes/metis/ABOVE3/Tom/Selected_PLD_Lakes_2024-10-21/BogardMapLakes_selected_PLDLakes_2024-10-11.shp', bbox=bbox)
     # gdf_jn_PLD.rename(columns={v: k for k, v in efflux_bogard_dict.items()}, inplace=True)
     df = pd.read_excel('/Volumes/metis/ABOVE3/Tom/PrelimLakeMatchupData_2024-10-21.xlsx', sheet_name='Measurements').query("Name == 'BogardMapLakes'")
@@ -146,6 +152,8 @@ def loadKuhnGreenness():
 
 def loadGreenness(bounds=None):
     """Loads working file with Liu and Khun greenness to a custom spatial domain and field names
+
+    Default domain is NA and Scandinavia N of 45 degrees
 
     Kuhn fields: continent,country,hylak_id,latitude,longitude,sen_slope,mann_kendall_trend,trend_significance,b2_mean,b2_stddev
     """
