@@ -25,6 +25,10 @@ GLAKES_filtered_fix_aqveg_dir = Path(
 GLAKES_filtered_fix_aqveg_dist_pth = Path(
     "/Volumes/metis/Datasets/Liu_aq_veg/figshare/original-private-repo/edk_out/GLAKES_filtered_fix_aqveg_dist.gpkg"
 )
+# GLAKES_filtered_fix_aqveg_dist + Gudasz GSWL morphometry
+GLAKES_gswl_pth = Path(
+    "/Volumes/metis/Datasets/Liu_aq_veg/figshare/original-private-repo/edk_out/GLAKES_gswl.gpkg"
+)
 greennessx2_pth = Path(
     "/Volumes/metis/Datasets/Liu_aq_veg/figshare/original-private-repo/edk_out/join_hl_greenness/greennessx2.gpkg"
 )
@@ -224,3 +228,9 @@ def loadGlobathy():
 # gdf = loadWBD()
 # loadBogardMapShp()
 # pass
+
+
+def loadGSWL(ABOVE_region=False):
+    return gpd.read_file(
+        "/Volumes/metis/Datasets/Gudasz-2025/Data/lake_morphometry/shp/GSWL.gpkg",
+    )
