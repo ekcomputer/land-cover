@@ -234,3 +234,12 @@ def loadGSWL(ABOVE_region=False):
     return gpd.read_file(
         "/Volumes/metis/Datasets/Gudasz-2025/Data/lake_morphometry/shp/GSWL.gpkg",
     )
+
+
+def loadGLAKES_GSWL(ABOVE_region=False, filter_matches=False):
+    gdf = gpd.read_file(
+        GLAKES_gswl_pth,
+    )
+    if filter_matches:
+        gdf = gdf[gdf.match_gswl == 1]
+    return gdf
