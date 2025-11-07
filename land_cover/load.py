@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import geopandas as gpd
+import numpy as np
 import pandas as pd
 
 gee_table_pth = "/Volumes/metis/ABOVE3/Tom/gee_input/gee_cleaned_sample_data_2025-03-06.csv"
@@ -25,12 +26,17 @@ GLAKES_filtered_fix_aqveg_dir = Path(
 GLAKES_filtered_fix_aqveg_dist_pth = Path(
     "/Volumes/metis/Datasets/Liu_aq_veg/figshare/original-private-repo/edk_out/GLAKES_filtered_fix_aqveg_dist.gpkg"
 )
-# GLAKES_filtered_fix_aqveg_dist + Gudasz GSWL morphometry
+greennessx2_pth = Path(
+    "/Volumes/metis/Datasets/Liu_aq_veg/figshare/original-private-repo/edk_out/join_hl_greenness/greennessx2.gpkg"
+)
+
+# greennessx2_pth + Gudasz GSWL morphometry
 GLAKES_gswl_pth = Path(
     "/Volumes/metis/Datasets/Liu_aq_veg/figshare/original-private-repo/edk_out/GLAKES_gswl.gpkg"
 )
-greennessx2_pth = Path(
-    "/Volumes/metis/Datasets/Liu_aq_veg/figshare/original-private-repo/edk_out/join_hl_greenness/greennessx2.gpkg"
+# clipped to na_abz
+GLAKES_gswl_abz_pth = Path(
+    "/Volumes/metis/Datasets/Liu_aq_veg/figshare/original-private-repo/edk_out/GLAKES_gswl_na_abz.gpkg"
 )
 
 ## Outputs
@@ -236,10 +242,65 @@ def loadGSWL(ABOVE_region=False):
     )
 
 
-def loadGLAKES_GSWL(ABOVE_region=False, filter_matches=False):
+def loadOlson(region="na_abz"):
+    """Olson terrestrial ecosystems of the world"""
     gdf = gpd.read_file(
-        GLAKES_gswl_pth,
+        "/Volumes/thebe/Other/Olson2001TerrEcosWorld/TerrestrialEcos.zip",
     )
+    if region == "na_abz":
+        gdf = gdf[(np.isin(gdf.BIOME, [6, 11])) & (gdf.REALM == "NA")]
+    return gdf
+
+
+# def loadGLAKES_GSWL(region="na_abz", filter_matches=False):
+# """ Slow because uses fiona"""
+#     if region=="na_abz":
+#         mask = loadOlson()
+#     else:
+#         mask = None
+#     gdf = gpd.read_file(
+#         GLAKES_gswl_pth,
+#         mask=mask
+#     )
+#     if filter_matches:
+#         gdf = gdf[gdf.match_gswl == 1]
+#     return gdf
+
+
+# def loadGLAKES_GSWL(region="na_abz", filter_matches=False):
+#     gdf = gpd.read_file(
+#         GLAKES_gswl_pth,
+#         # mask=mask
+#     )
+#     if filter_matches:
+#         gdf = gdf[gdf.match_gswl == 1]
+#     if region == "na_abz":
+#         olson = loadOlson()
+#         mask = gpd.GeoDataFrame(geometry=olson.union_all(), crs=olson.crs).to_crs(gdf.crs)
+#         gdf = gdf[gdf.geometry.within(mask)]
+#     return gdf
+
+
+def loadGLAKES_GSWL(region="na_abz", filter_matches=False):
+    """Use to save GLAKES_gswl_abz_pth for ease of loading (saves 40 sec)"""
+    if region=="na_abz" and GLAKES_gswl_abz_pth.exists():
+        return gpd.read_file(GLAKES_gswl_abz_pth)
+
     if filter_matches:
         gdf = gdf[gdf.match_gswl == 1]
+
+    if region == "na_abz":            
+        mask = loadOlson()
+        # ensure GeoDataFrame and matching CRS
+        mask_gdf = gpd.GeoDataFrame(geometry=mask.to_crs(gdf.crs).geometry)
+
+        # (optional) fix invalid polygons that can stall predicates
+        # mask_gdf["geometry"] = mask_gdf.geometry.buffer(0)
+
+        # fast: spatial index + predicate, avoids expensive union_all
+        hits = gpd.sjoin(gdf[["geometry"]], mask_gdf[["geometry"]], predicate="within", how="inner")
+        gdf = gdf.loc[hits.index.unique()]
+
+        # Rewrites to speed up loading next time
+        gdf.to_file(GLAKES_gswl_abz_pth)
     return gdf
