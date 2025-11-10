@@ -4,6 +4,8 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from cartopy.io import img_tiles
 from matplotlib import pyplot as plt
+from matplotlib.colors import LogNorm
+
 from pyproj.crs.crs import CRS
 import lonboard
 # from lonboard import PolygonLayer, ScatterplotLayer
@@ -130,3 +132,24 @@ def add_r2(x, y, xy=(0.05, 0.9), **kwargs):
     mask = ~np.isnan(x) & ~np.isnan(y)
     r, _ = pearsonr(x[mask], y[mask])
     ax.annotate(f"$r^2 =$ {r**2:.2f}", xy, xycoords="axes fraction", **kwargs)
+
+
+def reg_hexplot(gdf, xvar, yvar, gridsize=30, mincnt=40, vmin=None, vmax=None, norm=None):
+    if norm is not None:
+        norm = LogNorm(vmin=1)
+    plt.figure()
+    plt.hexbin(
+        gdf[xvar],
+        gdf[yvar],
+        gridsize=gridsize,
+        mincnt=mincnt,
+        cmap="viridis",
+        vmin=vmin,
+        vmax=vmax,
+        norm=norm,
+    )
+    plt.xlabel(xvar)
+    plt.ylabel(yvar)
+    plt.title(f"{xvar} vs {yvar}")
+    plt.colorbar(label="count")
+    plt.tight_layout()
