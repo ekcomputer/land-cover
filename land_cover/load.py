@@ -39,6 +39,15 @@ GLAKES_gswl_abz_pth = Path(
     "/Volumes/metis/Datasets/Liu_aq_veg/figshare/original-private-repo/edk_out/GLAKES_gswl_na_abz.gpkg"
 )
 
+## Working paths
+# filtered basedon some criteria
+GLAKES_gswl_abz_filtered_pth = Path(
+    "/Volumes/metis/Datasets/Liu_aq_veg/figshare/original-private-repo/edk_out/GLAKES_gswl_na_abz_filtered.gpkg"
+)
+bawld_join_gswl_abz_filtered_pth = Path(
+    "/Volumes/metis/ABOVE3/other_outputs/BAWLD_GLAKES_gswl_filtered.gpkg"
+)
+
 ## Outputs
 aleb_landcover_greenness_spatial = "/Volumes/metis/ABOVE3/land_cover_joins/out/shp/Efflux_Bogard_PLD_WBD_landCoverBuffers_core_tsFeatures_greenx2.gpkg"
 
@@ -281,11 +290,13 @@ def loadOlson(region="na_abz"):
 #     return gdf
 
 
-def loadGLAKES_GSWL(region="na_abz", filter_matches=False):
+def loadGLAKES_GSWL(region="na_abz", filter_matches=False, force_reload=True):
     """Use to save GLAKES_gswl_abz_pth for ease of loading (saves 40 sec)"""
-    if region=="na_abz" and GLAKES_gswl_abz_pth.exists():
+    if region=="na_abz" and GLAKES_gswl_abz_pth.exists() and not force_reload:
         return gpd.read_file(GLAKES_gswl_abz_pth)
 
+    # Otherwise, load full dataset
+    gdf = gpd.read_file(GLAKES_gswl_pth)
     if filter_matches:
         gdf = gdf[gdf.match_gswl == 1]
 
@@ -300,7 +311,15 @@ def loadGLAKES_GSWL(region="na_abz", filter_matches=False):
         # fast: spatial index + predicate, avoids expensive union_all
         hits = gpd.sjoin(gdf[["geometry"]], mask_gdf[["geometry"]], predicate="within", how="inner")
         gdf = gdf.loc[hits.index.unique()]
-
-        # Rewrites to speed up loading next time
-        gdf.to_file(GLAKES_gswl_abz_pth)
+        if not force_reload:
+            # Rewrites to speed up loading next time (currently, this will never execute)
+            gdf.to_file(GLAKES_gswl_abz_pth)
+            print(f"Overwrote abz file: {GLAKES_gswl_abz_pth}")
     return gdf
+
+
+def loadBAWLD():
+    """Includes my LEV estimate"""
+    return gpd.read_file(
+        "/Volumes/thebe/Other/Kuhn-olefeldt-BAWLD/BAWLD/edk_out/joined_lev/BAWLD_V1_LEV_v30.shp"
+    )

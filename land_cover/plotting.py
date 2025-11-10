@@ -134,11 +134,12 @@ def add_r2(x, y, xy=(0.05, 0.9), **kwargs):
     ax.annotate(f"$r^2 =$ {r**2:.2f}", xy, xycoords="axes fraction", **kwargs)
 
 
-def reg_hexplot(gdf, xvar, yvar, gridsize=30, mincnt=40, vmin=None, vmax=None, norm=None):
+def reg_hexplot(gdf, xvar, yvar, gridsize=30, mincnt=40, vmin=None, vmax=None, norm=None, ax=None):
     if norm is not None:
         norm = LogNorm(vmin=1)
-    plt.figure()
-    plt.hexbin(
+    if ax is None:
+        fig, ax = plt.subplots()
+    hb = ax.hexbin(
         gdf[xvar],
         gdf[yvar],
         gridsize=gridsize,
@@ -148,8 +149,8 @@ def reg_hexplot(gdf, xvar, yvar, gridsize=30, mincnt=40, vmin=None, vmax=None, n
         vmax=vmax,
         norm=norm,
     )
-    plt.xlabel(xvar)
-    plt.ylabel(yvar)
-    plt.title(f"{xvar} vs {yvar}")
-    plt.colorbar(label="count")
+    ax.set_xlabel(xvar)
+    ax.set_ylabel(yvar)
+    ax.set_title(f"{xvar} vs {yvar}")
+    plt.colorbar(hb, ax=ax, label="count")
     plt.tight_layout()
