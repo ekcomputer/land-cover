@@ -172,7 +172,7 @@ def loadKuhnGreenness():
 def loadGreenness(bounds=None):
     """Loads working file with Liu and Khun greenness to a custom spatial domain and field names
 
-    Default domain is NA and Scandinavia N of 45 degrees
+    One domain could be NA and Scandinavia N of 45 degrees
 
     Kuhn fields: continent,country,hylak_id,latitude,longitude,sen_slope,mann_kendall_trend,trend_significance,b2_mean,b2_stddev
     """
@@ -293,6 +293,7 @@ def loadOlson(region="na_abz"):
 def loadGLAKES_GSWL(region="na_abz", filter_matches=False, force_reload=True):
     """Use to save GLAKES_gswl_abz_pth for ease of loading (saves 40 sec)"""
     if region=="na_abz" and GLAKES_gswl_abz_pth.exists() and not force_reload:
+        print(f"Read existing abz file: {GLAKES_gswl_abz_pth}")
         return gpd.read_file(GLAKES_gswl_abz_pth)
 
     # Otherwise, load full dataset
