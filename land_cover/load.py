@@ -20,32 +20,42 @@ plot_dir = "/Volumes/metis/ABOVE3/fig"
 kurek_bounds = [-156.8973100000000045, 58.3921899999999994, -111.0319899999999933, 71.2416300000000007]
 
 # Current paths
-GLAKES_filtered_fix_aqveg_dir = Path(
-    "/Volumes/metis/Datasets/Liu_aq_veg/figshare/original-private-repo/edk_out/GLAKES_filtered_fix_aqveg.shp"
+GLAKES_filtered_fix_pth = Path("/Volumes/metis/Datasets/GLAKES/out/GLAKES_filtered_fix.shp")
+GLAKES_MA_pth = Path("/Volumes/metis/Datasets/Liu_aq_veg/figshare/MA.csv")
+GLAKES_NDVI_pth = Path("/Volumes/metis/Datasets/Liu_aq_veg/figshare/NDVI.csv")
+GLAKES_VO_pth = Path("/Volumes/metis/Datasets/Liu_aq_veg/figshare/VO.csv")
+GLAKES_filtered_fix_aqveg_pth = Path(
+    "/Volumes/metis/Datasets/Liu_aq_veg/figshare/v4/25012091/edk_out/GLAKES_filtered_fix_aqveg.gpkg"
 )
+
 GLAKES_filtered_fix_aqveg_dist_pth = Path(
-    "/Volumes/metis/Datasets/Liu_aq_veg/figshare/original-private-repo/edk_out/GLAKES_filtered_fix_aqveg_dist.gpkg"
+    "/Volumes/metis/Datasets/Liu_aq_veg/figshare/v4/25012091/edk_out/GLAKES_filtered_fix_aqveg_dist.gpkg"
 )
 greennessx2_pth = Path(
-    "/Volumes/metis/Datasets/Liu_aq_veg/figshare/original-private-repo/edk_out/join_hl_greenness/greennessx2.gpkg"
+    "/Volumes/metis/Datasets/Liu_aq_veg/figshare/v4/25012091/edk_out/join_hl_greenness/greennessx2.gpkg"
 )
 
 # greennessx2_pth + Gudasz GSWL morphometry
 GLAKES_gswl_pth = Path(
-    "/Volumes/metis/Datasets/Liu_aq_veg/figshare/original-private-repo/edk_out/GLAKES_gswl.gpkg"
+    "/Volumes/metis/Datasets/Liu_aq_veg/figshare/v4/25012091/edk_out/GLAKES_gswl.gpkg"
 )
 # clipped to na_abz
 GLAKES_gswl_abz_pth = Path(
-    "/Volumes/metis/Datasets/Liu_aq_veg/figshare/original-private-repo/edk_out/GLAKES_gswl_na_abz.gpkg"
+    "/Volumes/metis/Datasets/Liu_aq_veg/figshare/v4/25012091/edk_out/GLAKES_gswl_na_abz.gpkg"
 )
 
 ## Working paths
 # filtered basedon some criteria
 GLAKES_gswl_abz_filtered_pth = Path(
-    "/Volumes/metis/Datasets/Liu_aq_veg/figshare/original-private-repo/edk_out/GLAKES_gswl_na_abz_filtered.gpkg"
+    "/Volumes/metis/Datasets/Liu_aq_veg/figshare/v4/25012091/edk_out/GLAKES_gswl_na_abz_filtered.gpkg"
 )
 bawld_join_gswl_abz_filtered_pth = Path(
     "/Volumes/metis/ABOVE3/other_outputs/BAWLD_GLAKES_gswl_filtered.gpkg"
+)
+
+## Archived paths
+old_GLAKES_filtered_fix_aqveg_dist_pth = Path(
+    "/Volumes/metis/Datasets/Liu_aq_veg/figshare/original-private-repo/edk_out/GLAKES_filtered_fix_aqveg_dist.gpkg"
 )
 
 ## Outputs
@@ -150,8 +160,16 @@ def loadKurek():
     return merged
 
 
+def loadGLAKES():
+    gdf = gpd.read_file(GLAKES_filtered_fix_pth)
+    old_names = gdf.columns.drop("geometry")
+    new_names = [name + "_glakes" for name in old_names]
+    gdf = gdf.rename(columns=dict(zip(old_names, new_names)))
+    return gdf
+
+
 def loadLiu():
-    gdf = gpd.read_file(GLAKES_filtered_fix_aqveg_dir)
+    gdf = gpd.read_file(GLAKES_filtered_fix_aqveg_pth)
     return gdf
 
 
@@ -162,7 +180,11 @@ def loadKuhnGreenness():
     kuhn_txt = "/Volumes/metis/Datasets/Kuhn-lake-greenness/ABoVE_GrowingSeason_Lake_Color_1866/data/trends_1984_2019_landsat_ABoVE_lake_greenness.txt"
 
     gdf_hl = gpd.read_file(hydrolakes_shp)
-    df_kuhn = pd.read_csv(kuhn_txt)
+    old_names = gdf_hl.columns.drop("geometry")
+    new_names = [name + "_hylak" for name in old_names]
+    gdf_hl = gdf_hl.rename(columns=dict(zip(old_names, new_names)))
+    gdf_hl = gdf_hl.rename(columns={"Hylak_id_hylak": "Hylak_id"})
+    df_kuhn = pd.read_csv(kuhn_txt).drop(columns=["longitude", "latitude"])
 
     df_kuhn = df_kuhn.rename(columns={"hylak_id": "Hylak_id"})
     merged = gdf_hl.merge(df_kuhn, on="Hylak_id", how="inner")
@@ -246,9 +268,21 @@ def loadGlobathy():
 
 
 def loadGSWL(ABOVE_region=False):
-    return gpd.read_file(
+    gdf = gpd.read_file(
         "/Volumes/metis/Datasets/Gudasz-2025/Data/lake_morphometry/shp/GSWL.gpkg",
     )
+    gdf["area_km2"] = gdf["area"] / 1e6
+    gdf["dyn_ratio"] = np.sqrt(gdf.area_km2) / gdf.Zmean
+    gdf["depth_ratio"] = gdf.Zmean / gdf.Zmax
+
+    # compute area in km^2 from gswl and matching criterion (within 8% of Area_PW)
+    gdf.drop(columns="area", inplace=True)
+
+    # rename namespace vars by replacing columns `old_names` with `new_names`
+    old_names = gdf.columns.drop("geometry")
+    new_names = [name + "_gswl" for name in old_names]
+    gdf = gdf.rename(columns=dict(zip(old_names, new_names)))
+    return gdf
 
 
 def loadOlson(region="na_abz"):
