@@ -355,6 +355,30 @@ def loadGLAKES_GSWL(region="na_abz", filter_matches=False, force_reload=True):
 
 def loadBAWLD():
     """Includes my LEV estimate"""
-    return gpd.read_file(
-        "/Volumes/thebe/Other/Kuhn-olefeldt-BAWLD/BAWLD/edk_out/joined_lev/BAWLD_V1_LEV_v30.shp"
+    return (
+        gpd.read_file(
+            "/Volumes/thebe/Other/Kuhn-olefeldt-BAWLD/BAWLD/edk_out/joined_lev/BAWLD_V1_LEV_v30.shp"
+        )
+        .rename(
+            columns={
+                "LEV_MEAN_k": "LEV_MEAN_km2_k23",
+                "LEV_MAX_k": "LEV_MAX_km2_k23",
+                "LEV_MIN_k": "LEV_MIN_km2_k23",
+                "LEV_MEAN_f": "LEV_MEAN_frac_k23",
+                "LEV_MAX_fr": "LEV_MAX_frac_k23",
+                "LEV_MIN_fr": "LEV_MIN_frac_k23",
+                "LEV_MEAN_g": "LEV_MEAN_grid_frac_k23",
+                "LEV_MAX_gr": "LEV_MAX_grid_frac_k23",
+                "LEV_MIN_gr": "LEV_MIN_grid_frac_k23",
+                "est_mg_m2_": "est_mg_m2_day_k23",
+                "est_g_day": "est_g_day_k23",
+                "lake_count": "lake_count_k23",
+                "Cell_ID": "Cell_ID_bawld",
+                "Long": "Long_bawld",
+                "Lat": "Lat_bawld",
+                "Area_Pct": "Area_Pct_bawld",
+                "Shp_Area": "Shp_Area_bawld",
+            }
+        )
+        .drop(columns=["d_counting", "d_counti_1"])
     )
