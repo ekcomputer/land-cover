@@ -155,3 +155,71 @@ def reg_hexplot(gdf, xvar, yvar, gridsize=30, mincnt=40, vmin=None, vmax=None, n
     ax.set_title(f"{xvar} vs {yvar}")
     plt.colorbar(hb, ax=ax, label="count")
     plt.tight_layout()
+
+
+def plot_choro_and_hist(
+    gdf, var, grid_crs=None, cmap="Greens", bins=None, figsize=(12, 5), hist_stats=False
+):
+    """
+    Plot two adjacent panels:
+      - left: choropleth of `var` with vmin/vmax set to the 2nd and 98th percentiles
+               (or symmetric bounds with RdBu_r if values include negatives)
+      - right: histogram of `var` with `bins` bins and vertical lines for mean/median
+    Assumes gdf is a GeoDataFrame. Returns (fig, axs).
+    """
+    if grid_crs is None:
+        grid_crs = getattr(gdf, "crs", None)
+
+    vals = gdf[var].values
+    if np.all(~np.isfinite(vals)):
+        vmin, vmax = 0.0, 1.0
+    else:
+        # if any negative values, use a diverging cmap with symmetric bounds
+        if np.nanmin(vals) < 0:
+            p2, p98 = np.nanpercentile(vals, [2, 98])
+            absmax = max(abs(p2), abs(p98))
+            vmin, vmax = -absmax, absmax
+            cmap = "RdBu_r"
+        else:
+            vmin, vmax = np.nanpercentile(vals, [2, 98])
+            if vmin == vmax:  # fallback if constant
+                vmin, vmax = np.nanmin(vals), np.nanmax(vals)
+            absmax = None
+
+    fig, axs = plt.subplots(1, 2, figsize=figsize)
+
+    # Chloropleth
+    gdf.plot(column=var, ax=axs[0], legend=True, edgecolor=None, cmap=cmap, vmin=vmin, vmax=vmax)
+    axs[0].set_title(var)
+
+    # Histogram
+    data = gdf[var].dropna()
+    if bins is None:
+        if absmax is None:
+            bins = 40
+        else:
+            bins = np.linspace(-absmax, absmax, 40)
+    else:
+        bins = 40
+    counts, edges, patches = axs[1].hist(data, bins=bins, color="C0", alpha=0.8)
+    axs[1].set_title(f"{var} histogram")
+    axs[1].set_xlabel(var)
+    axs[1].set_ylabel("count")
+
+    # add vlines for mean and median (if finite)
+    if data.size > 0 and np.any(np.isfinite(data)) and (hist_stats is True):
+        mean_val = np.nanmean(data)
+        median_val = np.nanmedian(data)
+        ymax = axs[1].get_ylim()[1]
+        if np.isfinite(mean_val):
+            axs[1].vlines(
+                mean_val, 0, ymax, colors="k", linestyles="--", label=f"Mean = {mean_val:0.2}"
+            )
+        if np.isfinite(median_val):
+            axs[1].vlines(
+                median_val, 0, ymax, colors="r", linestyles="-.", label=f"Median = {median_val:0.2}"
+            )
+        axs[1].legend()
+
+    plt.tight_layout()
+    return fig, axs

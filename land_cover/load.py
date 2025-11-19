@@ -382,6 +382,9 @@ def loadBAWLD():
         )
     )
     gdf.drop(columns=["d_counting", "d_counti_1"], inplace=True)
+    gdf.drop(
+        columns=[c for c in gdf.columns if (c.endswith("_L")) or (c.endswith("_H"))], inplace=True
+    )
     gdf[
         [
             "LEV_MEAN_km2_k23",
@@ -396,3 +399,7 @@ def loadBAWLD():
         ]
     ] *= 100
     return gdf
+
+
+def load_regrid_BAWLD():
+    return gpd.read_file(bawld_join_gswl_abz_filtered_pth)
