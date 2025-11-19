@@ -52,8 +52,12 @@ def merge_asset_tables_to_gdf(asset_folder):
     table_assets = list_table_assets(asset_folder)
     gdfs = []
     for asset in table_assets:
-        gdf = ee_table_to_gdf(asset)
-        gdfs.append(gdf)
+        try:
+            gdf = ee_table_to_gdf(asset)
+            gdfs.append(gdf)
+            print(asset)
+        except: 
+            print(f"Error downloading: {asset}")
     if gdfs:
         merged_gdf = pd.concat(gdfs, ignore_index=True)
         merged_gdf = gpd.GeoDataFrame(merged_gdf, geometry="geometry", crs="EPSG:4326")
@@ -65,9 +69,18 @@ def merge_asset_tables_to_gdf(asset_folder):
 
 
 if __name__ == "__main__":
-    # Testing
-    asset_folder = "projects/ee-ekyzivat/assets/HABL/working/"
-    local_output_dir = "/Volumes/metis/ABOVE3/Digitizing/gee_asset_download"
+    # # Run my lakes
+    # asset_folder = "projects/ee-ekyzivat/assets/HABL/working/"
+    # local_output_dir = "/Volumes/metis/ABOVE3/Digitizing/gee_asset_download"
+    # merged_gdf = merge_asset_tables_to_gdf(asset_folder)
+    # print(merged_gdf)
+    # timestamp = datetime.now().strftime("%Y%m%d")
+    # merged_gdf.to_file(f"{local_output_dir}/merged_asset_tables_{timestamp}.shp")
+    # print("done")
+
+    # Run Tom's lakes
+    asset_folder = "projects/ee-tomhoward/assets/HABL/"
+    local_output_dir = "/Volumes/metis/ABOVE3/Digitizing/gee_asset_download/Tom"
     merged_gdf = merge_asset_tables_to_gdf(asset_folder)
     print(merged_gdf)
     timestamp = datetime.now().strftime("%Y%m%d")
