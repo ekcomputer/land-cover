@@ -320,7 +320,7 @@ def extractTimeSeriesForLakes(
     print(f"\nUse simplified classes: {use_simplified_classes}")
 
     # Load polygons and project to raster CRS
-    polys = gpd.read_file(pth_shp_in, rows=slice(0, 12000))  # slice(90000,90090)) #
+    polys = gpd.read_file(pth_shp_in) #, rows=slice(0, 12000))  # slice(90000,90090)) #
     with rio.open(pth_lc_in) as src:
         raster_crs = src.crs
     if polys.crs != raster_crs:
@@ -340,7 +340,7 @@ def extractTimeSeriesForLakes(
         envelope = gpd.read_file(envelope_pth)
         assert envelope.crs == polys.crs, "CRS mismatch: envelope vs. polygons"
         polys = polys[
-            polys.geometry.intersects(envelope.union_all(), align=False) & (polys.Area_m2 < 10e6)
+            polys.geometry.intersects(envelope.union_all(), align=False)#  & (polys.Area_m2 < 10e6)
         ]
         print(f"Filtered polygons by envelope: {len(polys)} features")
 

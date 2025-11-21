@@ -259,7 +259,8 @@ extractTimeSeriesForLakes(
     classes=classes,
     years=years,
     envelope_pth=above_lc_boreal_envelope_pth,
-    join_index="Lake_id_glakes"
+    join_index="Lake_id_glakes",
+    n_workers=7,
 )
 # normalizeTimeSeries(csv_out_pth, csv_out_norm_pth, classes_wet, classes_dry, classes_dry_rn, wetland_class="Wetland")
 # plotTimeSeries(buffer_lengths, csv_out_norm_pth, plot_dir)
