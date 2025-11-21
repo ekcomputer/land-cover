@@ -191,7 +191,9 @@ def extractBufferZonalHist(
                     n_buffers, nclasses
                 )
             else:
-                bc = np.zeros((n_buffers, nclasses), dtype=np.uint32)
+                # bc = np.zeros((n_buffers, nclasses), dtype=np.uint32)
+                # These would be lakes inside of my crude envelope but outside of the data area of the rasters
+                return None
             counts[bi] = bc
 
         # scale to area (hectares), consistent with your previous division by 1e4
@@ -207,102 +209,6 @@ def extractBufferZonalHist(
     df["Area_m2"] = poly["Area_m2"].iloc[0] if "Area_m2" in poly else None
     df["Perim_m2"] = poly["Perim_m2"].iloc[0] if "Perim_m2" in poly else None
     return df
-
-
-# def extractTimeSeriesForLakes(
-#     pth_shp_in,
-#     buffer_lengths,
-#     csv_out_pth,
-#     pth_lc_in=pth_lc_in,
-#     use_simplified_classes=False,
-#     classes=classes,
-#     years=years,
-#     envelope_pth=None,
-# ):
-#     '''
-#     Runs extractBufferZonalHist in a loop and outputs final data to 'csv_out_pth'. Also outputs map-projected shapefile to 'shp_projected_out_pth.'
-#     '''
-#     ## validate
-#     print('Paths:')
-#     print(csv_out_pth)
-#     print(f'\nUse simplified classes: {use_simplified_classes}')
-
-#     ## roi for cropping
-#     # with fiona.open(pth_roi_in, "r") as shapefile:
-#     #     roi = [feature["geometry"] for feature in shapefile]
-
-#     ## load lake polygons
-#     polys = gpd.read_file(pth_shp_in, rows=slice(0,12000)) # geodataframe of all lake outlines
-
-#     # obtain crs for pth_lc_in and reproject polys to it
-#     with rio.open(pth_lc_in) as src:
-#         raster_crs = src.crs
-#     if polys.crs != raster_crs:
-#         polys = polys.to_crs(raster_crs)
-
-#     ## save orig index to join back in attributes later
-#     polys['Join_idx'] = polys.index
-
-#     ## Calc area and perim (TODO: dist from shoreline)
-#     polys['Area_m2'] = polys.area
-#     polys['Perim_m2'] = polys.length
-
-#     ## Create gdf of unique polygons (they should already be unique though)
-#     # polys_g = polys.groupby('Sample_nam')
-#     # polys_u = polys_g.first() # unique lakes
-#     # Filter polygons by envelope if provided (keep only polys that intersect the envelope)
-#     if envelope_pth is None:
-#         polys_u = polys
-#     else:
-#         envelope = gpd.read_file(envelope_pth)
-#         assert envelope.crs == polys.crs, "CRS mismatch: envelope vs. polygons"
-#         polys_u = polys[
-#             polys.geometry.intersects(envelope.union_all(), align=False) & (polys.Area_m2
-#          < 10e6)]
-#         print(f'Filtered polygons by envelope: {len(polys)} -> {len(polys_u)} features')
-
-#     ## Join in area and perim (not needed)
-#     # polys_u = polys_u.merge(polys.loc[:, ['Sample_nam', 'Area_m2', 'Perim_m2']], left_index=True, right_on='Sample_nam', how='left')
-
-#     ## Test if any lakes are collected in multiple locs or need unique names
-#     # center_diff =polys_g.latitude.max() - polys_g.latitude.min()
-#     # center_diff.to_csv('Python/Land-cover/center_diff.csv')
-
-#     ## Run function in loop
-#     first = True
-#     for i in tqdm(range(len(polys_u))): #range(4): #range(len(polys_u)): # i, (_, poly) in enumerate(polys[:3].iterrows()): # range(4)
-#         poly = polys_u.iloc[i:i+1, :]
-
-#         ## print
-#         # print(poly.index.values)
-
-#         ## zonal hist
-#         dfba = extractBufferZonalHist(poly, buffer_lengths, pth_lc_in, classes=classes, years=years)
-#         if dfba is None:
-#             continue
-
-#         if first:
-#             df = dfba
-#             first = False
-#         else:
-#             df = pd.concat([df, dfba], ignore_index=True)
-
-#         ## Save checkpoint
-#         if i % checkpoint_frequency == 0:
-#             df.to_csv(csv_out_pth)
-#             print(f"Wrote checkpoint: {csv_out_pth}")
-
-#     ## Sort based on join index, which refers to original entries in shapefile
-#     # df.set_index('Join_idx')
-
-#     print('done')
-
-#     ## reset index
-#     df.set_index('Lake_name', inplace=True)
-
-#     ## write out
-#     df.to_csv(csv_out_pth)
-#     print(f'Wrote output: {csv_out_pth}')
 
 
 # multiprocessing + POSIX file lock (fcntl) version with resume + append
@@ -508,14 +414,13 @@ def extractTimeSeriesForLakes(
                 completed += 1
             elif status == 0:
                 # no data for lake (skipped)
-                print('skipped')
                 pass
             else:
                 errors += 1
                 print(f"[Join_idx={join_idx}] {status}")
 
     print(
-        f"done. wrote {completed} lakes, {errors} errors, {len(payloads)-completed-errors} skipped."
+        f"done. wrote {completed} lakes, {errors} errors, {len(payloads)-completed-errors} outside of raster area."
     )
 
 
