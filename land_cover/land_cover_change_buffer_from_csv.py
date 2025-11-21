@@ -140,11 +140,11 @@ shp_out_time_series_features_core_pth = xlsx_out_time_series_features_core_pth.r
 
 ## Function
 def extractBufferZonalHist(
-    poly, buffer_lengths, pth_lc_in, classes=classes, years=years, nodata=255, all_touched=False
+    poly, buffer_lengths, pth_lc_in, classes=classes, years=years, nodata=255, all_touched=False, join_index="join_idx"
 ):
     """
-    Vectorized zonal histogram for many buffers x all bands (years) in one pass.
-    Single-buffer fast path avoids rasterization entirely.
+    Zonal histogram for many buffers x all bands (years) in looped pass.
+    Rasterizing once per iteration speeds up operations
     """
     assert len(poly) >= 1, "poly must contain at least one geometry"
     lake_geom = poly.geometry.iloc[0] if len(poly) == 1 else poly.unary_union
@@ -203,7 +203,7 @@ def extractBufferZonalHist(
     df["Year"] = np.repeat(years[:n_bands], n_buffers)
     df["Buffer_m"] = np.tile(buffer_lengths_sorted, n_bands)
     df["Lake_name"] = poly.index[0]
-    df["Join_idx"] = poly["Join_idx"].iloc[0] if "Join_idx" in poly else None
+    df[join_index] = poly[join_index].iloc[0] if join_index in poly else None
     df["Area_m2"] = poly["Area_m2"].iloc[0] if "Area_m2" in poly else None
     df["Perim_m2"] = poly["Perim_m2"].iloc[0] if "Perim_m2" in poly else None
     return df
@@ -324,24 +324,28 @@ _BUFFER_LENGTHS = None
 _PTH_LC_IN = None
 _CLASSES = None
 _YEARS = None
+_JOIN_INDEX = None
 
 
-def _init_worker(csv_path, raster_crs_wkt, buffer_lengths, pth_lc_in, classes, years):
-    global _CSV_PATH, _RASTER_CRS, _BUFFER_LENGTHS, _PTH_LC_IN, _CLASSES, _YEARS
+def _init_worker(csv_path, raster_crs_wkt, buffer_lengths, pth_lc_in, classes, years, join_index):
+    global _CSV_PATH, _RASTER_CRS, _BUFFER_LENGTHS, _PTH_LC_IN, _CLASSES, _YEARS, _JOIN_INDEX
     _CSV_PATH = csv_path
     _RASTER_CRS = CRS.from_wkt(raster_crs_wkt)
     _BUFFER_LENGTHS = tuple(buffer_lengths)
     _PTH_LC_IN = pth_lc_in
     _CLASSES = list(classes)
     _YEARS = list(years)
+    _JOIN_INDEX = join_index
 
 
 def _gdf_from_payload(payload, crs):
     geom = _wkb.loads(payload["geometry_wkb"])
+    join_index = _JOIN_INDEX
+    # Note column order matters
     gdf = gpd.GeoDataFrame(
         {
             "Lake_name": [payload["Lake_name"]],
-            "Join_idx": [payload["Join_idx"]],
+            join_index: [payload[join_index]],
             "Area_m2": [payload["Area_m2"]],
             "Perim_m2": [payload["Perim_m2"]],
         },
@@ -364,25 +368,26 @@ def _append_df_csv_locked(df: pd.DataFrame, csv_path: str):
 
 
 def _worker(payload):
+    join_index = _JOIN_INDEX
     try:
         poly = _gdf_from_payload(payload, _RASTER_CRS)
         df = extractBufferZonalHist(
-            poly, _BUFFER_LENGTHS, _PTH_LC_IN, classes=_CLASSES, years=_YEARS
+            poly, _BUFFER_LENGTHS, _PTH_LC_IN, classes=_CLASSES, years=_YEARS, join_index=join_index
         )
         if df is None or df.empty:
-            return payload["Join_idx"], 0
+            return payload[join_index], 0
         _append_df_csv_locked(df, _CSV_PATH)
         del df
         gc.collect()
-        return payload["Join_idx"], 1
+        return payload[join_index], 1
     except Exception as e:
-        return payload["Join_idx"], f"ERROR: {e}"
+        return payload[join_index], f"ERROR: {e}"
 
 
 def _prime_header(
     csv_path: Path,
     classes,
-    years_cols=("Year", "Buffer_m", "Lake_name", "Join_idx", "Area_m2", "Perim_m2"),
+    years_cols,
 ):
     # Create file with header if missing/empty to guarantee consistent column order
     csv_path.parent.mkdir(parents=True, exist_ok=True)
@@ -401,6 +406,7 @@ def extractTimeSeriesForLakes(
     classes=classes,
     years=years,
     envelope_pth=None,
+    join_index=None,
     n_workers=8,
 ):
     print("Paths:")
@@ -412,10 +418,13 @@ def extractTimeSeriesForLakes(
     with rio.open(pth_lc_in) as src:
         raster_crs = src.crs
     if polys.crs != raster_crs:
+        print(f"reprojecting polygons to {raster_crs}")
         polys = polys.to_crs(raster_crs)
 
     # Attributes needed downstream
-    polys["Join_idx"] = polys.index
+    if join_index is None:
+        join_index = "join_idx"
+        polys[join_index] =  polys.index
     polys["Area_m2"] = polys.area
     polys["Perim_m2"] = polys.length
     polys["Lake_name"] = polys.index  # keep stable name
@@ -430,22 +439,24 @@ def extractTimeSeriesForLakes(
         print(f"Filtered polygons by envelope: {len(polys)} features")
 
     out_path = Path(csv_out_pth)
-    _prime_header(out_path, classes)
+    _prime_header(
+        out_path, classes, ("Year", "Buffer_m", "Lake_name", join_index, "Area_m2", "Perim_m2")
+    )
 
     # Resume support: read already processed Join_idx
     done_idx = set()
     try:
         if out_path.exists() and out_path.stat().st_size > 0:
             # Only load Join_idx column for speed/memory
-            done_col = pd.read_csv(out_path, usecols=["Join_idx"], dtype={"Join_idx": "Int64"})[
-                "Join_idx"
+            done_col = pd.read_csv(out_path, usecols=[join_index], dtype={join_index: "Int64"})[
+                join_index
             ]
             done_idx = set(done_col.dropna().astype(int).unique().tolist())
             print(f"Resuming: found {len(done_idx)} completed lakes in existing CSV.")
     except Exception as e:
         print(f"Resume read failed ({e}); proceeding without resume filtering.")
 
-    pending = polys[~polys["Join_idx"].isin(done_idx)]
+    pending = polys[~polys[join_index].isin(done_idx)]
     total = len(pending)
     if total == 0:
         print("Nothing to do. All polygons already processed.")
@@ -457,7 +468,7 @@ def extractTimeSeriesForLakes(
         payloads.append(
             {
                 "Lake_name": int(row["Lake_name"]),
-                "Join_idx": int(row["Join_idx"]),
+                join_index: int(row[join_index]),
                 "Area_m2": float(row["Area_m2"]),
                 "Perim_m2": float(row["Perim_m2"]),
                 "geometry_wkb": row.geometry.wkb,
@@ -483,6 +494,7 @@ def extractTimeSeriesForLakes(
         pth_lc_in,
         list(classes),
         list(years),
+        join_index,
     )
 
     with ctx.Pool(processes=n_workers, initializer=_init_worker, initargs=initargs) as pool:
@@ -617,6 +629,7 @@ def extractTimeSeriesFeatures(
     csv_out_time_series_features_pth=xlsx_out_time_series_features_pth,
     important_vars=important_vars,
     csv_out_time_series_features_core_pth=xlsx_out_time_series_features_core_pth,
+    join_index="join_idx",
 ):
     '''
     Loads data from 'xlsx_out_norm_pth' and reduces each time series for the specified buffer (probably smallest buffer) to a series of features/metrics.
@@ -640,7 +653,7 @@ def extractTimeSeriesFeatures(
     stats_last.drop('Year', axis=1, inplace=True)
 
     ## Compute median vals
-    meta_columns = ['Buffer_m', 'Join_idx', 'Area_m2', 'Perim_m2'] # metadata
+    meta_columns = ['Buffer_m', join_index, 'Area_m2', 'Perim_m2'] # metadata
     stats_median = dfg.median().drop(columns=meta_columns)
 
     ## Rename stats vars for 2014
