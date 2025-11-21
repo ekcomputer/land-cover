@@ -31,8 +31,11 @@ GLAKES_filtered_fix_aqveg_pth = Path(
 GLAKES_filtered_fix_aqveg_dist_pth = Path(
     "/Volumes/metis/Datasets/Liu_aq_veg/figshare/v4/25012091/edk_out/GLAKES_filtered_fix_aqveg_dist.gpkg"
 )
-greennessx2_pth = Path(
+greennessx2_albers_pth = Path(
     "/Volumes/metis/Datasets/Liu_aq_veg/figshare/v4/25012091/edk_out/join_hl_greenness/greennessx2.gpkg"
+)
+greennessx2_albers_pth = Path(
+    "/Volumes/metis/Datasets/Liu_aq_veg/figshare/v4/25012091/edk_out/join_hl_greenness/greennessx2_albers.gpkg"
 )
 
 # greennessx2_pth + Gudasz GSWL morphometry
@@ -43,6 +46,10 @@ GLAKES_gswl_pth = Path(
 GLAKES_gswl_abz_pth = Path(
     "/Volumes/metis/Datasets/Liu_aq_veg/figshare/v4/25012091/edk_out/GLAKES_gswl_na_abz.gpkg"
 )
+
+# land cover
+above_lc_boreal_pth = "/Volumes/metis/Datasets/Hu_Wang_ABOVE_landcover_2025/Boreal_LandCoverClasses_AK_CA/data/ABoVE_LandCover_boreal.vrt"
+above_lc_boreal_envelope_pth = "/Volumes/metis/Datasets/Hu_Wang_ABOVE_landcover_2025/Boreal_LandCoverClasses_AK_CA/data/edk_out/above_lc_boreal_envelope.shp"
 
 ## Working paths
 # filtered basedon some criteria
@@ -205,7 +212,7 @@ def loadGreenness(bounds=None):
     else:
         bounds=None
     gdf = gpd.read_file(
-        greennessx2_pth,
+        greennessx2_albers_pth,
         bounds=bounds,
         engine=engine,
     )
