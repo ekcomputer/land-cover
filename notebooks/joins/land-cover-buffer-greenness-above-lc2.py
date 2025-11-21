@@ -81,7 +81,7 @@ classes_dry_rn = [
     item.replace(" ", "_").replace("/", "_") for item in classes_dry
 ]  # rename var too
 classes_wet = ["Wetland", "Water"]
-years = np.arange(1984, 2022 + 1)
+years = np.arange(1986, 2020 + 1)
 
 # variables from vector ds I want in the output
 
@@ -272,3 +272,4 @@ extractTimeSeriesForLakes(
 #     important_vars,
 #     csv_out_time_series_features_core_pth,
 # )
+print("DONE.")

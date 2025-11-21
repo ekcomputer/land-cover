@@ -137,73 +137,76 @@ xlsx_out_time_series_features_pth = csv_out_pth.replace('.csv', '_tsFeatures.csv
 xlsx_out_time_series_features_core_pth = xlsx_out_time_series_features_pth.replace('_tsFeatures.csv', '_core_tsFeatures.csv')
 shp_out_time_series_features_core_pth = xlsx_out_time_series_features_core_pth.replace('xlsx', 'shp')
 
-## Create custom function for zonal stats that better resembles the arc/Q version
-def _my_hist(lc, nclasses):
-    ''' Gives counts for each integer-valued landcover class.'''
-    return np.histogram(np.ndarray.flatten(lc), range=[1,nclasses+1], bins = nclasses)[0] # bin counts
-
 
 ## Function
-def extractBufferZonalHist(poly, buffer_lengths, pth_lc_in, classes=classes, years=years):
-    ''' Function to run in-memory that computes zonal histagram for an arbitrary number of buffers (typically 2).
+def extractBufferZonalHist(
+    poly, buffer_lengths, pth_lc_in, classes=classes, years=years, nodata=255, all_touched=False
+):
+    """
+    Vectorized zonal histogram for many buffers x all bands (years) in one pass.
+    Single-buffer fast path avoids rasterization entirely.
+    """
+    assert len(poly) >= 1, "poly must contain at least one geometry"
+    lake_geom = poly.geometry.iloc[0] if len(poly) == 1 else poly.unary_union
 
-    User needs to ensure CRS match or error is thrown
-        
-        Inputs:
-        Poly:               polygon-geometry geodataframe of one lake            
-        Buffer_lengths:     is in map units (probably m).
-        
-        Output:             dfba: a gdf with attributes for buffer length, year, join index for the lake given by 'poly'
-        '''
     with rio.open(pth_lc_in) as src:
-        raster_crs = src.crs
-    assert raster_crs == poly.crs, "CRS mismatch"
-    ## buffer pts
-    buffers = pd.concat([poly.buffer(length) for length in buffer_lengths])
+        assert src.crs == poly.crs, "CRS mismatch"
 
-    ## load raster subset
-    with rio.open(pth_lc_in) as src:
+        # sort buffers so last one is the outermost ROI for cropping
+        buffer_lengths = list(buffer_lengths)
+        order = np.argsort(buffer_lengths)
+        buffer_lengths_sorted = [buffer_lengths[i] for i in order]
+        buf_geoms = [lake_geom.buffer(L) for L in buffer_lengths_sorted]
+
+        # crop to outermost buffer; everything outside is filled with nodata
         try:
-            lc, lc_transform = rasterio.mask.mask(src, buffers[-1:], crop=True) # use outermost buffer as mask ROI to avoid loading too much data
+            data, tr = rio.mask.mask(src, [buf_geoms[-1]], crop=True, filled=True, nodata=nodata)
         except ValueError as e:
-            if str(e) == "Input shapes do not overlap raster.":
+            if "do not overlap raster" in str(e).lower():
                 return None
+            raise
+
+        n_bands, H, W = data.shape
+        n_buffers = len(buf_geoms)
+        nclasses = len(classes)
+
+        # --- multi-buffer path: rasterize buffer IDs once, then bin per band ---
+        labels = rio.features.rasterize(
+            [(g, i + 1) for i, g in enumerate(buf_geoms)],
+            out_shape=(H, W),
+            transform=tr,
+            all_touched=all_touched,
+            dtype="uint16",
+        )
+        counts = np.empty((n_bands, n_buffers, nclasses), dtype=np.uint32)
+        valid_vals = (data >= 1) & (data <= nclasses)
+        for bi in range(n_bands):
+            vals = data[bi]
+            m = (labels > 0) & valid_vals[bi] & (vals != nodata)
+            if m.any():
+                keys = (labels[m] - 1) * nclasses + (
+                    vals[m] - 1
+                )  # (buffer_id, class_id) -> 1D key
+                bc = np.bincount(keys, minlength=n_buffers * nclasses).reshape(
+                    n_buffers, nclasses
+                )
             else:
-                raise
-        lc_meta = src.meta # can also simply use src.read(window=window) if I know the window, rather than the shapefile
-        # lc = src.read()
-        lc = reshape_as_image(lc)
-        src_crs=src.crs
-        src_res=src.res
-        src_shp=src.shape
-    nYears = lc.shape[2]
+                bc = np.zeros((n_buffers, nclasses), dtype=np.uint32)
+            counts[bi] = bc
 
-    ## Loop over all years and most buffer lengths (can be sped up by vectorizing buffers: run zonal_stats on multiple features at once)
-    # nBuffers = len(buffer_lengths)
-    # array=np.full([nYears, nclasses, nBuffers], np.nan, dtype='uint32') # init array for outpu
+        # scale to area (hectares), consistent with your previous division by 1e4
+        pix_area_ha = abs(src.res[0] * src.res[1]) / 10000.0
+        areas = counts.reshape(n_bands * n_buffers, nclasses).astype("float64") * pix_area_ha
 
-    ## Init
-    dfba = pd.DataFrame(columns = classes + ['Year', 'Buffer_m', 'Join_idx']) # 'df buffer append' # classes.extend(['Year', 'Buffer_m'])
-    n = 0 # init
-    nclasses = len(classes)
-
-    ## Loop
-    for j, ring in enumerate(buffers): # note that buffer is a closed shape, not a ring!
-        for i, year in enumerate(range(nYears)):
-
-            ## Zonal stats. Source: https://automating-gis-processes.github.io/CSC/notebooks/L5/zonal-statistics.html
-            stat = zonal_stats(ring, lc[:,:,i], affine=lc_transform, stats='count unique', add_stats={'histogram': lambda data: _my_hist(data, nclasses)}, nodata=255) # could use count_unique=True option, but I want zeros in my histograms
-            # array[i,:,j] = stat[0]['histogram']
-            # This throws an error about concatting hists with empty or all-NA columns TODO
-            dfba = pd.concat((dfba, pd.DataFrame(stat[0]['histogram'][np.newaxis, :] * np.prod(src_res)/10000, columns=classes)), ignore_index=True, verify_integrity=True) # TODO: divide by 1e6, not 1e5, right?
-            dfba.loc[n, 'Year'] = years[i]
-            dfba.loc[n, 'Buffer_m'] = buffer_lengths[j]
-            dfba.loc[n, 'Lake_name'] = poly.index.values
-            dfba.loc[n, 'Join_idx'] = poly.Join_idx.values #[0]
-            dfba.loc[n, 'Area_m2'] = poly.Area_m2.values # could do by running pd.concat((dfba, poly), axis='rows'), but that would add a few more columns to a very tall dataframe...
-            dfba.loc[n, 'Perim_m2'] = poly.Perim_m2.values
-            n += 1
-    return dfba
+    # --- assemble dataframe efficiently ---
+    df = pd.DataFrame(areas, columns=classes)
+    df["Year"] = np.repeat(years[:n_bands], n_buffers)
+    df["Buffer_m"] = np.tile(buffer_lengths_sorted, n_bands)
+    df["Lake_name"] = poly.index[0]
+    df["Join_idx"] = poly["Join_idx"].iloc[0] if "Join_idx" in poly else None
+    df["Area_m2"] = poly["Area_m2"].iloc[0] if "Area_m2" in poly else None
+    df["Perim_m2"] = poly["Perim_m2"].iloc[0] if "Perim_m2" in poly else None
+    return df
 
 
 def extractTimeSeriesForLakes(
@@ -229,7 +232,7 @@ def extractTimeSeriesForLakes(
     #     roi = [feature["geometry"] for feature in shapefile]
 
     ## load lake polygons
-    polys = gpd.read_file(pth_shp_in) #, rows=slice(90000,90090)) # geodataframe of all lake outlines
+    polys = gpd.read_file(pth_shp_in, rows=slice(90000,90090)) # geodataframe of all lake outlines
 
     # obtain crs for pth_lc_in and reproject polys to it
     with rio.open(pth_lc_in) as src:
