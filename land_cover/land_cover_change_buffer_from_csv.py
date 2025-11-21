@@ -209,6 +209,189 @@ def extractBufferZonalHist(
     return df
 
 
+# def extractTimeSeriesForLakes(
+#     pth_shp_in,
+#     buffer_lengths,
+#     csv_out_pth,
+#     pth_lc_in=pth_lc_in,
+#     use_simplified_classes=False,
+#     classes=classes,
+#     years=years,
+#     envelope_pth=None,
+# ):
+#     '''
+#     Runs extractBufferZonalHist in a loop and outputs final data to 'csv_out_pth'. Also outputs map-projected shapefile to 'shp_projected_out_pth.'
+#     '''
+#     ## validate
+#     print('Paths:')
+#     print(csv_out_pth)
+#     print(f'\nUse simplified classes: {use_simplified_classes}')
+
+#     ## roi for cropping
+#     # with fiona.open(pth_roi_in, "r") as shapefile:
+#     #     roi = [feature["geometry"] for feature in shapefile]
+
+#     ## load lake polygons
+#     polys = gpd.read_file(pth_shp_in, rows=slice(0,12000)) # geodataframe of all lake outlines
+
+#     # obtain crs for pth_lc_in and reproject polys to it
+#     with rio.open(pth_lc_in) as src:
+#         raster_crs = src.crs
+#     if polys.crs != raster_crs:
+#         polys = polys.to_crs(raster_crs)
+
+#     ## save orig index to join back in attributes later
+#     polys['Join_idx'] = polys.index
+
+#     ## Calc area and perim (TODO: dist from shoreline)
+#     polys['Area_m2'] = polys.area
+#     polys['Perim_m2'] = polys.length
+
+#     ## Create gdf of unique polygons (they should already be unique though)
+#     # polys_g = polys.groupby('Sample_nam')
+#     # polys_u = polys_g.first() # unique lakes
+#     # Filter polygons by envelope if provided (keep only polys that intersect the envelope)
+#     if envelope_pth is None:
+#         polys_u = polys
+#     else:
+#         envelope = gpd.read_file(envelope_pth)
+#         assert envelope.crs == polys.crs, "CRS mismatch: envelope vs. polygons"
+#         polys_u = polys[
+#             polys.geometry.intersects(envelope.union_all(), align=False) & (polys.Area_m2
+#          < 10e6)]
+#         print(f'Filtered polygons by envelope: {len(polys)} -> {len(polys_u)} features')
+
+#     ## Join in area and perim (not needed)
+#     # polys_u = polys_u.merge(polys.loc[:, ['Sample_nam', 'Area_m2', 'Perim_m2']], left_index=True, right_on='Sample_nam', how='left')
+
+#     ## Test if any lakes are collected in multiple locs or need unique names
+#     # center_diff =polys_g.latitude.max() - polys_g.latitude.min()
+#     # center_diff.to_csv('Python/Land-cover/center_diff.csv')
+
+#     ## Run function in loop
+#     first = True
+#     for i in tqdm(range(len(polys_u))): #range(4): #range(len(polys_u)): # i, (_, poly) in enumerate(polys[:3].iterrows()): # range(4)
+#         poly = polys_u.iloc[i:i+1, :]
+
+#         ## print
+#         # print(poly.index.values)
+
+#         ## zonal hist
+#         dfba = extractBufferZonalHist(poly, buffer_lengths, pth_lc_in, classes=classes, years=years)
+#         if dfba is None:
+#             continue
+
+#         if first:
+#             df = dfba
+#             first = False
+#         else:
+#             df = pd.concat([df, dfba], ignore_index=True)
+
+#         ## Save checkpoint
+#         if i % checkpoint_frequency == 0:
+#             df.to_csv(csv_out_pth)
+#             print(f"Wrote checkpoint: {csv_out_pth}")
+
+#     ## Sort based on join index, which refers to original entries in shapefile
+#     # df.set_index('Join_idx')
+
+#     print('done')
+
+#     ## reset index
+#     df.set_index('Lake_name', inplace=True)
+
+#     ## write out
+#     df.to_csv(csv_out_pth)
+#     print(f'Wrote output: {csv_out_pth}')
+
+
+# multiprocessing + POSIX file lock (fcntl) version with resume + append
+import os
+import gc
+import fcntl
+from pathlib import Path
+from multiprocessing import get_context
+import pandas as pd
+import geopandas as gpd
+import rasterio as rio
+from shapely import wkb as _wkb
+from pyproj import CRS
+
+# ---------- worker globals (set by initializer) ----------
+_CSV_PATH = None
+_RASTER_CRS = None
+_BUFFER_LENGTHS = None
+_PTH_LC_IN = None
+_CLASSES = None
+_YEARS = None
+
+
+def _init_worker(csv_path, raster_crs_wkt, buffer_lengths, pth_lc_in, classes, years):
+    global _CSV_PATH, _RASTER_CRS, _BUFFER_LENGTHS, _PTH_LC_IN, _CLASSES, _YEARS
+    _CSV_PATH = csv_path
+    _RASTER_CRS = CRS.from_wkt(raster_crs_wkt)
+    _BUFFER_LENGTHS = tuple(buffer_lengths)
+    _PTH_LC_IN = pth_lc_in
+    _CLASSES = list(classes)
+    _YEARS = list(years)
+
+
+def _gdf_from_payload(payload, crs):
+    geom = _wkb.loads(payload["geometry_wkb"])
+    gdf = gpd.GeoDataFrame(
+        {
+            "Lake_name": [payload["Lake_name"]],
+            "Join_idx": [payload["Join_idx"]],
+            "Area_m2": [payload["Area_m2"]],
+            "Perim_m2": [payload["Perim_m2"]],
+        },
+        geometry=[geom],
+        crs=crs,
+    )
+    return gdf
+
+
+def _append_df_csv_locked(df: pd.DataFrame, csv_path: str):
+    # POSIX advisory lock on the file while writing
+    # Ensures header is written once and rows append atomically
+    with open(csv_path, "a+", newline="") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        need_header = f.tell() == 0  # at end because "a+" opens and seeks to end
+        df.to_csv(f, index=False, header=need_header)
+        f.flush()
+        os.fsync(f.fileno())
+        fcntl.flock(f, fcntl.LOCK_UN)
+
+
+def _worker(payload):
+    try:
+        poly = _gdf_from_payload(payload, _RASTER_CRS)
+        df = extractBufferZonalHist(
+            poly, _BUFFER_LENGTHS, _PTH_LC_IN, classes=_CLASSES, years=_YEARS
+        )
+        if df is None or df.empty:
+            return payload["Join_idx"], 0
+        _append_df_csv_locked(df, _CSV_PATH)
+        del df
+        gc.collect()
+        return payload["Join_idx"], 1
+    except Exception as e:
+        return payload["Join_idx"], f"ERROR: {e}"
+
+
+def _prime_header(
+    csv_path: Path,
+    classes,
+    years_cols=("Year", "Buffer_m", "Lake_name", "Join_idx", "Area_m2", "Perim_m2"),
+):
+    # Create file with header if missing/empty to guarantee consistent column order
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    if not csv_path.exists() or csv_path.stat().st_size == 0:
+        cols = list(classes) + list(years_cols)
+        empty = pd.DataFrame(columns=cols)
+        _append_df_csv_locked(empty, str(csv_path))
+
+
 def extractTimeSeriesForLakes(
     pth_shp_in,
     buffer_lengths,
@@ -218,91 +401,110 @@ def extractTimeSeriesForLakes(
     classes=classes,
     years=years,
     envelope_pth=None,
+    n_workers=8,
 ):
-    '''
-    Runs extractBufferZonalHist in a loop and outputs final data to 'csv_out_pth'. Also outputs map-projected shapefile to 'shp_projected_out_pth.'
-    '''
-    ## validate
-    print('Paths:')
+    print("Paths:")
     print(csv_out_pth)
-    print(f'\nUse simplified classes: {use_simplified_classes}')
+    print(f"\nUse simplified classes: {use_simplified_classes}")
 
-    ## roi for cropping
-    # with fiona.open(pth_roi_in, "r") as shapefile:
-    #     roi = [feature["geometry"] for feature in shapefile]
-
-    ## load lake polygons
-    polys = gpd.read_file(pth_shp_in, rows=slice(90000,90090)) # geodataframe of all lake outlines
-
-    # obtain crs for pth_lc_in and reproject polys to it
+    # Load polygons and project to raster CRS
+    polys = gpd.read_file(pth_shp_in, rows=slice(0, 12000))  # slice(90000,90090)) #
     with rio.open(pth_lc_in) as src:
         raster_crs = src.crs
     if polys.crs != raster_crs:
         polys = polys.to_crs(raster_crs)
 
-    ## save orig index to join back in attributes later
-    polys['Join_idx'] = polys.index
+    # Attributes needed downstream
+    polys["Join_idx"] = polys.index
+    polys["Area_m2"] = polys.area
+    polys["Perim_m2"] = polys.length
+    polys["Lake_name"] = polys.index  # keep stable name
 
-    ## Calc area and perim (TODO: dist from shoreline)
-    polys['Area_m2'] = polys.area
-    polys['Perim_m2'] = polys.length
-
-    ## Create gdf of unique polygons (they should already be unique though)
-    # polys_g = polys.groupby('Sample_nam')
-    # polys_u = polys_g.first() # unique lakes
-    # Filter polygons by envelope if provided (keep only polys that intersect the envelope)
-    if envelope_pth is None:
-        polys_u = polys
-    else:
+    # Optional envelope filter
+    if envelope_pth is not None:
         envelope = gpd.read_file(envelope_pth)
         assert envelope.crs == polys.crs, "CRS mismatch: envelope vs. polygons"
-        polys_u = polys[
-            polys.geometry.intersects(envelope.union_all(), align=False) & (polys.Area_m2
-         < 10e6)]
-        print(f'Filtered polygons by envelope: {len(polys)} -> {len(polys_u)} features')
+        polys = polys[
+            polys.geometry.intersects(envelope.union_all(), align=False) & (polys.Area_m2 < 10e6)
+        ]
+        print(f"Filtered polygons by envelope: {len(polys)} features")
 
-    ## Join in area and perim (not needed)
-    # polys_u = polys_u.merge(polys.loc[:, ['Sample_nam', 'Area_m2', 'Perim_m2']], left_index=True, right_on='Sample_nam', how='left')
+    out_path = Path(csv_out_pth)
+    _prime_header(out_path, classes)
 
-    ## Test if any lakes are collected in multiple locs or need unique names
-    # center_diff =polys_g.latitude.max() - polys_g.latitude.min()
-    # center_diff.to_csv('Python/Land-cover/center_diff.csv')
+    # Resume support: read already processed Join_idx
+    done_idx = set()
+    try:
+        if out_path.exists() and out_path.stat().st_size > 0:
+            # Only load Join_idx column for speed/memory
+            done_col = pd.read_csv(out_path, usecols=["Join_idx"], dtype={"Join_idx": "Int64"})[
+                "Join_idx"
+            ]
+            done_idx = set(done_col.dropna().astype(int).unique().tolist())
+            print(f"Resuming: found {len(done_idx)} completed lakes in existing CSV.")
+    except Exception as e:
+        print(f"Resume read failed ({e}); proceeding without resume filtering.")
 
-    ## Run function in loop
-    first = True
-    for i in tqdm(range(len(polys_u))): #range(4): #range(len(polys_u)): # i, (_, poly) in enumerate(polys[:3].iterrows()): # range(4)
-        poly = polys_u.iloc[i:i+1, :]
+    pending = polys[~polys["Join_idx"].isin(done_idx)]
+    total = len(pending)
+    if total == 0:
+        print("Nothing to do. All polygons already processed.")
+        return
 
-        ## print
-        # print(poly.index.values)
+    # Prepare small, picklable payloads
+    payloads = []
+    for _, row in pending.iterrows():
+        payloads.append(
+            {
+                "Lake_name": int(row["Lake_name"]),
+                "Join_idx": int(row["Join_idx"]),
+                "Area_m2": float(row["Area_m2"]),
+                "Perim_m2": float(row["Perim_m2"]),
+                "geometry_wkb": row.geometry.wkb,
+            }
+        )
 
-        ## zonal hist
-        dfba = extractBufferZonalHist(poly, buffer_lengths, pth_lc_in, classes=classes, years=years)
-        if dfba is None:
-            continue
+    # Multiprocessing (fork on Unix/macOS)
+    ctx = get_context("fork")
+    chunksize = max(1, len(payloads) // (n_workers * 8) or 1)
 
-        if first:
-            df = dfba
-            first = False
-        else:
-            df = pd.concat([df, dfba], ignore_index=True)
+    # Progress
+    try:
+        from tqdm import tqdm
 
-        ## Save checkpoint
-        if i % checkpoint_frequency == 0:
-            df.to_csv(csv_out_pth)
-            print(f"Wrote checkpoint: {csv_out_pth}")
+        use_tqdm = True
+    except Exception:
+        use_tqdm = False
 
-    ## Sort based on join index, which refers to original entries in shapefile
-    # df.set_index('Join_idx')
+    initargs = (
+        str(out_path),
+        raster_crs.to_wkt(),
+        list(buffer_lengths),
+        pth_lc_in,
+        list(classes),
+        list(years),
+    )
 
-    print('done')
+    with ctx.Pool(processes=n_workers, initializer=_init_worker, initargs=initargs) as pool:
+        iterator = pool.imap_unordered(_worker, payloads, chunksize=chunksize)
+        if use_tqdm:
+            iterator = tqdm(iterator, total=len(payloads), desc="Lakes")
+        completed = 0
+        errors = 0
+        for join_idx, status in iterator:
+            if status == 1:
+                completed += 1
+            elif status == 0:
+                # no data for lake (skipped)
+                print('skipped')
+                pass
+            else:
+                errors += 1
+                print(f"[Join_idx={join_idx}] {status}")
 
-    ## reset index
-    df.set_index('Lake_name', inplace=True)
-
-    ## write out
-    df.to_csv(csv_out_pth)
-    print(f'Wrote output: {csv_out_pth}')
+    print(
+        f"done. wrote {completed} lakes, {errors} errors, {len(payloads)-completed-errors} skipped."
+    )
 
 
 def normalizeTimeSeries(

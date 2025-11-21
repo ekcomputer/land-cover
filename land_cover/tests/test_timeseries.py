@@ -4,8 +4,11 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 
+# old_csv = Path(
+#     "/Volumes/metis/ABOVE3/land_cover_joins/out/glakes_green_abovelc25/xlsx/archive/greennessx2_albers_landCoverBuffers_og.csv"
+# )
 old_csv = Path(
-    "/Volumes/metis/ABOVE3/land_cover_joins/out/glakes_green_abovelc25/xlsx/archive/greennessx2_albers_landCoverBuffers_og.csv"
+    "/Volumes/metis/ABOVE3/land_cover_joins/out/glakes_green_abovelc25/xlsx/archive/greennessx2_albers_landCoverBuffers_parallel.csv"
 )
 new_csv = Path(
     "/Volumes/metis/ABOVE3/land_cover_joins/out/glakes_green_abovelc25/xlsx/archive/greennessx2_albers_landCoverBuffers_vectorized.csv"
@@ -28,7 +31,7 @@ df_new = pd.read_csv(new_csv)
 df_rast = pd.read_csv(rast_csv)
 
 # Harmonize & tag
-for df, tag in [(df_old, "original"), (df_new, "vectorized"), (df_rast, "rasterized")]:
+for df, tag in [(df_old, "parallel"), (df_new, "vectorized"), (df_rast, "rasterized")]:
     # Ensure expected columns exist
     assert {"Year", "Join_idx", "Wetland"}.issubset(df.columns), f"Missing cols in {tag}"
     df["Year"] = pd.to_numeric(df["Year"], errors="coerce").astype("Int64")
@@ -60,3 +63,4 @@ g.set_axis_labels("Year", "Wetland area")
 g.set_titles("{col_name}")
 plt.tight_layout()
 plt.show()
+pass
