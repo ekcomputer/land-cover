@@ -13,7 +13,7 @@ import warnings
 from IPython.display import display
 from matplotlib.colors import Normalize
 import seaborn as sns
-from scipy.stats import pearsonr
+from scipy.stats import pearsonr, linregress
 
 # from palettable.colorbrewer.diverging import PuOr_10_r
 # from palettable.colorbrewer.sequential import Oranges_9, BuPu_6
@@ -132,6 +132,18 @@ def add_r2(x, y, xy=(0.05, 0.9), **kwargs):
     mask = ~np.isnan(x) & ~np.isnan(y)
     r, _ = pearsonr(x[mask], y[mask])
     ax.annotate(f"$r^2 =$ {r**2:.2f}", xy, xycoords="axes fraction", **kwargs)
+
+
+def add_regress(x, y, xy=(0.05, 0.9), **kwargs):
+    ax = plt.gca()
+    mask = ~np.isnan(x) & ~np.isnan(y)
+    if mask.sum() > 2:
+        r, p = pearsonr(x[mask], y[mask])
+        slope = linregress(x[mask], y[mask]).slope
+        text = f"r²={r**2:.2g}, p={p:.2g}, slope={slope:.2g}"
+    else:
+        text = "insufficient data"
+    ax.annotate(text, xy, xycoords="axes fraction", **kwargs)
 
 
 def reg_hexplot(gdf, xvar, yvar, gridsize=30, mincnt=40, vmin=None, vmax=None, norm=None, ax=None, **kwargs):
