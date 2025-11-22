@@ -5,6 +5,7 @@ import cartopy.feature as cfeature
 from cartopy.io import img_tiles
 from matplotlib import pyplot as plt
 from matplotlib.colors import LogNorm
+import pandas as pd
 
 from pyproj.crs.crs import CRS
 import lonboard
@@ -235,3 +236,67 @@ def plot_choro_and_hist(
 
     plt.tight_layout()
     return fig, axs
+
+
+def plot_neon_analytes_timeseries_pandas(
+    csv_path="/Volumes/metis/ABOVE3/NEON/NEON_chem-surfacewater/stackedFiles/swc_externalLabDataByAnalyte.csv",
+    analytes=("DOC", "DIC", "UV Absorbance (280 nm)", "TP", "TN"),
+    decimate=1,
+):
+    use_cols = ["collectDate", "siteID", "analyte", "analyteConcentration", "analyteUnits"]
+    df = pd.read_csv(csv_path, usecols=use_cols, low_memory=False)
+    df["collectDate"] = pd.to_datetime(df["collectDate"], errors="coerce", utc=True)
+    df["analyteConcentration"] = pd.to_numeric(df["analyteConcentration"], errors="coerce")
+    df = df[df["analyte"].isin(analytes)]
+    df = df.dropna(subset=["collectDate", "analyteConcentration"])
+    if decimate > 1:
+        df = df.iloc[::decimate, :]
+
+    sns.set_style("whitegrid")
+    g = sns.relplot(
+        data=df,
+        x="collectDate",
+        y="analyteConcentration",
+        hue="siteID",
+        col="analyte",
+        kind="line",
+        marker="o",
+        col_wrap=3,
+        facet_kws={"sharey": False},
+    )
+    g.set_axis_labels("Date", "Concentration")
+    g.set_titles("{col_name}")
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_neon_in_situ_timeseries_pandas(
+    csv_path="/Volumes/metis/ABOVE3/NEON/NEON_chem-surfacewater/stackedFiles/swc_externalLabDataByAnalyte.csv",
+    use_cols=["startDateTime", "siteID", "chlorophyll"],
+    decimate=1,
+    date_var="startDateTime",
+    y="chlorophyll",
+):
+    "No tall df"
+    df = pd.read_csv(csv_path, usecols=use_cols, low_memory=False)
+    df[date_var] = pd.to_datetime(df[date_var], errors="coerce", utc=True)
+    df[y] = pd.to_numeric(df[y], errors="coerce")
+    df = df.dropna(subset=[date_var, y])
+    if decimate > 1:
+        df = df.iloc[::decimate, :]
+
+    sns.set_style("whitegrid")
+    g = sns.relplot(
+        data=df,
+        x=date_var,
+        y=y,
+        hue="siteID",
+        kind="line",
+        marker="o",
+        # col_wrap=3,
+        # facet_kws={"sharey": True},
+    )
+    g.set_axis_labels("Date", "Concentration")
+    g.set_titles("{col_name}")
+    plt.tight_layout()
+    plt.show()
