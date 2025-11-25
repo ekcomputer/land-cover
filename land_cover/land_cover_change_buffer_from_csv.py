@@ -267,7 +267,7 @@ def _append_df_csv_locked(df: pd.DataFrame, csv_path: str):
     with open(csv_path, "a+", newline="") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         need_header = f.tell() == 0  # at end because "a+" opens and seeks to end
-        df.to_csv(f, index=False, header=need_header)
+        df.to_csv(f, index=False, header=need_header, float_format='%.3f')
         f.flush()
         os.fsync(f.fileno())
         fcntl.flock(f, fcntl.LOCK_UN)
@@ -471,8 +471,52 @@ def normalizeTimeSeries(
         df[var + '_pct'] = df[var] / df.loc[:,classes_dry_rn].sum(axis=1)*100
 
     ## Write out
-    df.to_csv(xlsx_out_norm_pth)
+    df.to_csv(xlsx_out_norm_pth, float_format="%.3f")
     print(f'Wrote normalized output table: {xlsx_out_norm_pth}')
+
+
+def normalizeTimeSeries_above_boreal(
+    xlsx_out_pth,
+    xlsx_out_norm_pth,
+    classes_wet=classes_wet,
+    classes_dry=classes_dry,
+    wetland_class="Wetland",
+):
+    """
+    As above, but modified for the new land cover classes in Hu et al. 2025.
+    """
+    classes = np.unique(classes_dry + classes_wet).tolist()
+    ## Load
+    print("Normalizing land cover...")
+    usecols = classes + ["Year", "Lake_id_glakes", "Area_m2", "Perim_m2"]
+    df = pd.read_csv(xlsx_out_pth, usecols=usecols) #, nrows=1000) # all but Lake_name and Buffer_m
+
+    ## Find wetland percent, like michela does, by taking: (L+B+F)/(L+B+F+W)*100 (TODO: ensure it only comes from largest/central water body within buffer)
+    df["Littoral_wetland_pct"] = df[wetland_class] / df.loc[:, classes_wet].sum(axis=1) * 100
+
+    ## Find class percent of all vars, with denominator of total non-water buffer
+    class_sum = df.loc[:, classes].sum(axis=1)
+    for var in classes_dry:
+        df[var + "_pct"] = df[var] / class_sum * 100
+
+    ## Rename cols to remove spaces
+    mapper = {var: var.replace(" ", "_").replace("/", "_") for var in df.columns}
+    df.rename(columns=mapper, inplace=True)  # rename cols
+
+    ## Lump into groups
+    df["Total_inun"] = df.Water + df.Wetland
+    df["Trees"] = df.Evergreen_Forest + df.Deciduous_Forest + df.Mixed_Forest
+    df["Sparse"] = df.Bare_Sparsely_vegetated + df.Ice_Snow
+
+    ## Find class percent of lumped areas, with denominator of total non-water buffer
+    lumped_classes = ["Trees", "Sparse", "Total_inun"]
+    for var in lumped_classes:
+        df[var + "_pct"] = df[var] / class_sum * 100
+
+    ## Write out
+    # write with 3 decimal places
+    df.to_csv(xlsx_out_norm_pth, float_format='%.3f')
+    print(f"Wrote normalized output table: {xlsx_out_norm_pth}")
 
 
 def plotTimeSeries(
@@ -611,11 +655,11 @@ def extractTimeSeriesFeatures(
     [stats.insert(0, col, stats.pop(col)) for col in joined_cols[-1::-1]] # re-order cols # TODO import load.sortColumns
 
     ## Write out
-    stats.to_csv(csv_out_time_series_features_pth, freeze_panes=(1,2))
+    stats.to_csv(csv_out_time_series_features_pth, float_format='%.3f')
     print(f'Wrote time series output table: {csv_out_time_series_features_pth}')
 
     ## Save and write out most important stats
-    stats.loc[:, ds_specific_vars + important_vars].to_csv(csv_out_time_series_features_core_pth, freeze_panes=(1,1))
+    stats.loc[:, ds_specific_vars + important_vars].to_csv(csv_out_time_series_features_core_pth, float_format='%.3f')
     print(f'Wrote time series output table (greatest hits): {csv_out_time_series_features_core_pth}')
 
     ## Save shapefile

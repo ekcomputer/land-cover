@@ -8,8 +8,7 @@ from matplotlib import pyplot as plt
 
 from land_cover.land_cover_change_buffer_from_csv import (
     extractTimeSeriesFeatures,
-    extractTimeSeriesForLakes,
-    normalizeTimeSeries,
+    normalizeTimeSeries_above_boreal,
     plotTimeSeries,
 )
 from land_cover.load import (
@@ -76,10 +75,8 @@ classes_dry = [
     "Herb",
     "Shrub",
     "Ice/Snow",
+    "Wetland", # Note, I've included in both dry and wet
 ]
-classes_dry_rn = [
-    item.replace(" ", "_").replace("/", "_") for item in classes_dry
-]  # rename var too
 classes_wet = ["Wetland", "Water"]
 years = np.arange(1986, 2020 + 1)
 
@@ -251,19 +248,23 @@ shp_out_time_series_features_core_pth = csv_out_time_series_features_core_pth.re
 
 ## RUN
 
-extractTimeSeriesForLakes(
-    pth_shp_in,
-    buffer_lengths,
-    csv_out_pth,
-    pth_lc_in,
-    classes=classes,
-    years=years,
-    envelope_pth=above_lc_boreal_envelope_pth,
-    join_index="Lake_id_glakes",
-    n_workers=7,
+# extractTimeSeriesForLakes(
+#     pth_shp_in,
+#     buffer_lengths,
+#     csv_out_pth,
+#     pth_lc_in,
+#     classes=classes,
+#     years=years,
+#     envelope_pth=above_lc_boreal_envelope_pth,
+#     join_index="Lake_id_glakes",
+#     n_workers=7,
+# )
+normalizeTimeSeries_above_boreal(
+    csv_out_pth, csv_out_norm_pth, classes_wet, classes_dry, wetland_class="Wetland"
 )
-# normalizeTimeSeries(csv_out_pth, csv_out_norm_pth, classes_wet, classes_dry, classes_dry_rn, wetland_class="Wetland")
+
 # plotTimeSeries(buffer_lengths, csv_out_norm_pth, plot_dir)
+
 # extractTimeSeriesFeatures(
 #     csv_out_norm_pth,
 #     years,
