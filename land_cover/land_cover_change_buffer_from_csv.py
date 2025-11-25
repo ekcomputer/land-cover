@@ -686,21 +686,61 @@ def extractTimeSeriesFeatures_above_boreal(
     Outputs data to 'xlsx_out_time_series_features_pth'.
     """
 
+    def _renorm_changes_above_boreal(
+        g: pd.DataFrame, forest={"Deciduous_Forest", "Evergreen_Forest", "Mixed_Forest"}
+    ) -> pd.Series:
+        # g = g.sort_values("Year")
+        first = g.iloc[0].astype(float)
+        last = g.iloc[-1].astype(float)
+
+        first_dry = first[classes_dry_rn]
+        last_dry = last[classes_dry_rn]
+
+        s1 = float(first_dry.sum())
+        s2 = float(last_dry.sum())
+
+        # renormalize to sum(classes_dry) == 100
+        first_norm = (first_dry / s1 * 100.0) if s1 > 0 else first_dry * 0.0
+        last_norm = (last_dry / s2 * 100.0) if s2 > 0 else last_dry * 0.0
+        delta_norm = last_norm - first_norm
+
+        EF_change = float(delta_norm.get("Evergreen_Forest", 0.0))
+        DF_change = float(delta_norm.get("Deciduous_Forest", 0.0))
+        Shrub_change = float(delta_norm.get("Shrub", 0.0))
+        F_change = float(delta_norm[[c for c in classes_dry_rn if c in forest]].sum())
+
+        # Non-renormalized change for Water in native percent units (if available)
+        if "Water" in g.columns:
+            Water_change_raw = float(last.get("Water", np.nan) - first.get("Water", np.nan))
+        else:
+            Water_change_raw = np.nan
+
+        return pd.Series(
+            {
+                "EF_diff": EF_change,
+                "DF_diff": DF_change,
+                "Shrub_diff": Shrub_change,
+                "F_diff": F_change,
+                "Water_diff_raw": Water_change_raw,
+            }
+        )
+
     ## Load
     print("Calculating time series features...")
-    df = pd.read_csv(xlsx_out_norm_pth, nrows=2000) #, index_col=0)
+    df = pd.read_csv(xlsx_out_norm_pth, nrows=3500) #, index_col=0) # HERE TODO
+    if "Unnamed: 0" in df.columns:
+        df.drop(columns="Unnamed: 0", inplace=True)
 
     ## Filter by buffer length
     # df.query("Buffer_m == @buffer_lengths[0]", inplace=True)
 
     ## Group by lake
     dfg = df.groupby(join_index)
-
     ## Take a specific year (year 2014) value as initial features for output df
-    stats_last = dfg.nth(28)
+    stats_last = dfg.nth(28).set_index(join_index)
 
     ## Remove unnecessary columns
-    stats_last.drop("Year", axis=1, inplace=True)
+    # stats_last.drop(columns=["Year"], inplace=True)
 
     ## Compute median vals
     meta_columns = ["Area_m2", "Perim_m2"]  # metadata # "Buffer_m"
@@ -708,14 +748,14 @@ def extractTimeSeriesFeatures_above_boreal(
 
     ## Rename stats vars for 2014
     mapper = {var: (var + "_2014") for var in stats_last.drop(meta_columns, axis=1).columns}
-    stats_last.rename(columns=mapper, inplace=True)  # rename cols
+    stats_last = stats_last.rename(columns=mapper, inplace=False)  # rename cols
 
     ## Rename stats vars for median
     mapper = {var: (var + "_med") for var in stats_median.columns}
-    stats_median.rename(columns=mapper, inplace=True)  # rename cols
+    stats_median = stats_median.rename(columns=mapper, inplace=False)  # rename cols
 
     ## Insert median stats into stats df
-    stats = pd.concat((stats_last, stats_median), axis="columns")
+    stats = pd.concat((stats_last, stats_median), axis="columns")  # .drop(columns=["Year"])
 
     ## Reorder to put meta vars first
     [stats.insert(0, col, stats.pop(col)) for col in meta_columns[-1::-1]]  # re-order cols
@@ -745,12 +785,12 @@ def extractTimeSeriesFeatures_above_boreal(
         .apply(lambda lake: grouped_classes[np.argmax(lake)], axis="columns")
     )
     stats["Dominant_veg_2014"] = (
-        dfg.nth(28)
+        dfg.nth(28).set_index(join_index)
         .loc[:, classes_dry_rn]
         .apply(lambda lake: classes_dry_rn[np.argmax(lake)], axis="columns")
     )
     stats["Dominant_veg_group_2014"] = (
-        dfg.nth(28)
+        dfg.nth(28).set_index(join_index)
         .loc[:, grouped_classes]
         .apply(lambda lake: grouped_classes[np.argmax(lake)], axis="columns")
     )
@@ -766,6 +806,15 @@ def extractTimeSeriesFeatures_above_boreal(
         )
 
     # Class transitions
+    transitions = dfg.apply(_renorm_changes_above_boreal)
+    stats = stats.join(transitions, validate="1:1")
+
+    ## Save short version # not joined with rest of dataset
+    stats.to_csv(
+        csv_out_time_series_features_pth.replace("_tsFeatures", "_short_tsFeatures"),
+        float_format="%.3f",
+    )
+    print(f"Wrote short time series output table: {csv_out_time_series_features_pth}")
 
     ## Join in lat/long and location from og-mod csv: load files
     gdf_og_data = gpd.read_file(pth_shp_in)

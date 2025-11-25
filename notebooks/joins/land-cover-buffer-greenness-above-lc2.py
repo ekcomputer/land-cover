@@ -232,6 +232,11 @@ important_vars = [
     "Perim_area_ratio",
     "Total_inun_change",
     "Total_inun_trend",
+    "EF_diff",
+    "DF_diff",
+    "Shrub_diff",
+    "F_diff",
+    "Water_diff_raw",
 ]
 
 ## dynamic values
