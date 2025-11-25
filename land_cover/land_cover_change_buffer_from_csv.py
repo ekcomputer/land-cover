@@ -669,6 +669,147 @@ def extractTimeSeriesFeatures(
     pass
 
 
+def extractTimeSeriesFeatures_above_boreal(
+    xlsx_out_norm_pth=xlsx_out_norm_pth,
+    years=years,
+    classes_dry_rn=classes_dry_rn,
+    pth_shp_in=pth_shp_in,
+    ds_specific_vars=ds_specific_vars,
+    csv_out_time_series_features_pth=xlsx_out_time_series_features_pth,
+    important_vars=important_vars,
+    csv_out_time_series_features_core_pth=xlsx_out_time_series_features_core_pth,
+    join_index="Lake_id_glakes",
+    grouped_classes=["Trees", "Shrub", "Wetland", "Herb", "Sparse"],
+):
+    """
+    Loads data from 'xlsx_out_norm_pth' and reduces each time series for the specified buffer (probably smallest buffer) to a series of features/metrics.
+    Outputs data to 'xlsx_out_time_series_features_pth'.
+    """
+
+    ## Load
+    print("Calculating time series features...")
+    df = pd.read_csv(xlsx_out_norm_pth, nrows=2000) #, index_col=0)
+
+    ## Filter by buffer length
+    # df.query("Buffer_m == @buffer_lengths[0]", inplace=True)
+
+    ## Group by lake
+    dfg = df.groupby(join_index)
+
+    ## Take a specific year (year 2014) value as initial features for output df
+    stats_last = dfg.nth(28)
+
+    ## Remove unnecessary columns
+    stats_last.drop("Year", axis=1, inplace=True)
+
+    ## Compute median vals
+    meta_columns = ["Area_m2", "Perim_m2"]  # metadata # "Buffer_m"
+    stats_median = dfg.median().drop(columns=meta_columns)
+
+    ## Rename stats vars for 2014
+    mapper = {var: (var + "_2014") for var in stats_last.drop(meta_columns, axis=1).columns}
+    stats_last.rename(columns=mapper, inplace=True)  # rename cols
+
+    ## Rename stats vars for median
+    mapper = {var: (var + "_med") for var in stats_median.columns}
+    stats_median.rename(columns=mapper, inplace=True)  # rename cols
+
+    ## Insert median stats into stats df
+    stats = pd.concat((stats_last, stats_median), axis="columns")
+
+    ## Reorder to put meta vars first
+    [stats.insert(0, col, stats.pop(col)) for col in meta_columns[-1::-1]]  # re-order cols
+
+    ## Compute more features
+    # dropna?
+    # 1 Dynamism, 1.5 RSD of water, 2 trend in water and shrubs, 3 trend in dom veg
+
+    stats["Total_inun_RSD"] = dfg.Total_inun.std() / dfg.Total_inun.mean()
+    stats["Total_inun_dyn_pct"] = (
+        (dfg.Total_inun.max() - dfg.Total_inun.min()) / dfg.Total_inun.max() * 100
+    )
+    stats["Hi_water_yr"] = dfg.Total_inun.apply(
+        lambda group: years[np.argmax(group)]
+    )  # Cool! Use GroupBy.apply to apply a lambda function over all groups!
+    stats["Lo_water_yr"] = dfg.Total_inun.apply(
+        lambda group: years[np.argmin(group)]
+    )  # Cool! Use GroupBy.apply to apply a lambda function over all groups!
+    stats["Dominant_veg_1986"] = (
+        dfg.first()
+        .loc[:, classes_dry_rn]
+        .apply(lambda lake: classes_dry_rn[np.argmax(lake)], axis="columns")
+    )
+    stats["Dominant_veg_group_1986"] = (
+        dfg.first()
+        .loc[:, grouped_classes]
+        .apply(lambda lake: grouped_classes[np.argmax(lake)], axis="columns")
+    )
+    stats["Dominant_veg_2014"] = (
+        dfg.nth(28)
+        .loc[:, classes_dry_rn]
+        .apply(lambda lake: classes_dry_rn[np.argmax(lake)], axis="columns")
+    )
+    stats["Dominant_veg_group_2014"] = (
+        dfg.nth(28)
+        .loc[:, grouped_classes]
+        .apply(lambda lake: grouped_classes[np.argmax(lake)], axis="columns")
+    )
+    stats["SDF"] = stats.Perim_m2 / (2 * np.sqrt(np.pi * stats.Area_m2))
+    stats["Perim_area_ratio"] = stats.Perim_m2 / stats.Area_m2
+    # dfg['Year', 'Total_inun'].apply(lambda group: theilslopes(group.Year, group.Total_inun))
+    for lcClass in ["Total_inun"] + grouped_classes:
+        stats[lcClass + "_change"] = dfg[lcClass].apply(
+            lambda group: theilslopes(group)[0]
+        )  # Using method from Kuhn et and Butman 2021, PNAS
+        stats[lcClass + "_trend"] = dfg[lcClass].apply(
+            lambda group: pymannkendall.original_test(group)[0]
+        )
+
+    # Class transitions
+
+    ## Join in lat/long and location from og-mod csv: load files
+    gdf_og_data = gpd.read_file(pth_shp_in)
+    geoms = gdf_og_data.geometry
+    crs = gdf_og_data.crs
+
+    ## rm unnecessary cols
+    joined_cols = ds_specific_vars
+    gdf_og_data = gdf_og_data[joined_cols]
+
+    ## join and rename index
+    stats = stats.merge(
+        gdf_og_data, left_index=True, right_on=join_index, how="right", # validate="1:1"
+    )  # TODO: make more flexible for when I actually have lake name
+    # stats.index.rename(
+    #     "Lake", inplace=True
+    # )  # Note the 'lake' corresponds to index in pth_shp_in (arbitrary index after concatennating PLD and WBD lakes)
+
+    ## Reorder to put meta vars first
+    [
+        stats.insert(0, col, stats.pop(col)) for col in joined_cols[-1::-1]
+    ]  # re-order cols # TODO import load.sortColumns
+
+    ## Write out
+    stats.to_csv(csv_out_time_series_features_pth, float_format="%.3f")
+    print(f"Wrote time series output table: {csv_out_time_series_features_pth}")
+
+    ## Save and write out most important stats
+    stats.loc[:, important_vars].to_csv(
+        csv_out_time_series_features_core_pth, float_format="%.3f"
+    )
+    print(
+        f"Wrote time series output table (greatest hits): {csv_out_time_series_features_core_pth}"
+    )
+
+    ## Save shapefile
+    # gdf_stats = gpd.GeoDataFrame(stats, geometry=geoms, crs=crs)
+    # gdf_stats.loc[:, ds_specific_vars + important_vars + ["geometry"]].to_file(
+    #     shp_out_time_series_features_core_pth
+    # )
+
+    pass
+
+
 if __name__ == '__main__':
     '''Run join_WBD.ipynb first'''
     # extractTimeSeriesForLakes(pth_shp_in, buffer_lengths, csv_out_pth)

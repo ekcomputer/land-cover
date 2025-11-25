@@ -7,7 +7,8 @@ import seaborn as sns
 from matplotlib import pyplot as plt
 
 from land_cover.land_cover_change_buffer_from_csv import (
-    extractTimeSeriesFeatures,
+    extractTimeSeriesForLakes,
+    extractTimeSeriesFeatures_above_boreal,
     normalizeTimeSeries_above_boreal,
     plotTimeSeries,
 )
@@ -210,7 +211,7 @@ important_vars = [
     "Dmax_use_m",
     "dyn_ratio_glak_hylak",
     "depth_ratio_globath",
-    "Bare/Sparsely vegetated",
+    "Bare_Sparsely_vegetated_2014",
     "Deciduous_Forest_2014",
     "Evergreen_Forest_2014",
     "Mixed_Forest_2014",
@@ -218,18 +219,23 @@ important_vars = [
     "Shrub_2014",
     "Water_2014",
     "Wetland_2014",
+    "Sparse_2014",
     "Total_inun_RSD",
     "Total_inun_dyn_pct",
     "Hi_water_yr",
     "Lo_water_yr",
     "Dominant_veg_2014",
     "Dominant_veg_group_2014",
+    "Dominant_veg_1986",
+    "Dominant_veg_group_1986",
     "SDF",
     "Perim_area_ratio",
     "Total_inun_change",
     "Total_inun_trend",
 ]
+
 ## dynamic values
+classes_dry_rn = [item.replace(" ", "_").replace("/", "_") for item in classes_dry]
 if use_simplified_classes:
     pth_lc_in = pth_lc_in_simp
     classes = classes_simp
@@ -259,21 +265,22 @@ shp_out_time_series_features_core_pth = csv_out_time_series_features_core_pth.re
 #     join_index="Lake_id_glakes",
 #     n_workers=7,
 # )
-normalizeTimeSeries_above_boreal(
-    csv_out_pth, csv_out_norm_pth, classes_wet, classes_dry, wetland_class="Wetland"
-)
+# normalizeTimeSeries_above_boreal(
+#     csv_out_pth, csv_out_norm_pth, classes_wet, classes_dry, wetland_class="Wetland"
+# )
 
 # plotTimeSeries(buffer_lengths, csv_out_norm_pth, plot_dir)
 
-# extractTimeSeriesFeatures(
-#     csv_out_norm_pth,
-#     years,
-#     classes_dry_rn,
-#     pth_shp_in,
-#     ds_specific_vars,
-#     csv_out_time_series_features_pth,
-#     important_vars,
-#     csv_out_time_series_features_core_pth,
-#     join_index = "Lake_id_glakes"
-# )
+extractTimeSeriesFeatures_above_boreal(
+    csv_out_norm_pth,
+    years,
+    classes_dry_rn,
+    pth_shp_in,
+    ds_specific_vars,
+    csv_out_time_series_features_pth,
+    important_vars,
+    csv_out_time_series_features_core_pth,
+    join_index="Lake_id_glakes",
+    grouped_classes=["Trees", "Shrub", "Wetland", "Herb", "Sparse"],
+)
 print("DONE.")
