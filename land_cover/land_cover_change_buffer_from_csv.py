@@ -3,25 +3,21 @@
 
 '''
 Summary
-For calculating land cover change within polygons. Used for whitefish lake for Karen Wang and Jonathan Wang ABoVE land cover dataset- multitemporal. Use 'scratch' environment.
-EDK 2021.11.19
+For calculating land cover and its change within polygons representing outwards buffers from lakes.
+Can optionally join in all attributes from original lake dataset.
+
+Write three outputs:
+1. All input variables for lakes that were matched to land cover
+2. All input variables for all lakes
+3. Selected input variables for all lakes
+
 TODO: 
-* Vectorizing: Can use zonal statistics on multiple polygons (buffers) at once, instead of in loop (fine for now, bc quite fast regardless).
-* Add original csv/shp attributes from join based on index.
 * Check that water normalization only refers to largest/central lake within buffer.
-* Compute actual stats, based on /mnt/c/Users/ekyzivat/Dropbox/Matlab/ABoVE/UAVSAR/analysis/lake-timeseries-stats.ipynb
-* Loops for ts stats over multiple buffers
 * Add watershed buffer
-* Load in csv to join in Location (site) names
-* Calc mean dist from shoreline in first processing function (need to write custom script)
 * IMPORTANT: Find a way to automatically include Lat/Long and any note columns in final spreadsheet (perhaps join in?) Right now, I'm just using a quick fix in Excel.
 
 
 2025 problems:
-* parallel, vectorize, append csv?
-* checkpoints not written if iteration returns None
-* slow loading
-* update bog etc, for above boreal v2
 '''
 
 import os
@@ -679,7 +675,7 @@ def extractTimeSeriesFeatures_above_boreal(
     csv_out_time_series_features_pth=xlsx_out_time_series_features_pth,
     important_vars=important_vars,
     csv_out_time_series_features_core_pth=xlsx_out_time_series_features_core_pth,
-    csv_out_time_series_features_short_pth=csv_out_time_series_features_short_pth
+    csv_out_time_series_features_short_pth=csv_out_time_series_features_short_pth,
     join_index="Lake_id_glakes",
     grouped_classes=["Trees", "Shrub", "Wetland", "Herb", "Sparse"],
 ):
@@ -712,10 +708,10 @@ def extractTimeSeriesFeatures_above_boreal(
         F_change = float(delta_norm[[c for c in classes_dry_rn if c in forest]].sum())
 
         # Non-renormalized change for Water in native percent units (if available)
-        if "Water" in g.columns:
-            Water_change_raw = float(last.get("Water", np.nan) - first.get("Water", np.nan))
+        if "Total_inun_pct" in g.columns:
+            Inun_change_raw = float(last.get("Total_inun_pct", np.nan) - first.get("Total_inun_pct", np.nan))
         else:
-            Water_change_raw = np.nan
+            Inun_change_raw = np.nan
 
         return pd.Series(
             {
@@ -723,7 +719,7 @@ def extractTimeSeriesFeatures_above_boreal(
                 "DF_diff": DF_change,
                 "Shrub_diff": Shrub_change,
                 "F_diff": F_change,
-                "Water_diff_raw": Water_change_raw,
+                "Inun_diff": Inun_change_raw,
             }
         )
 
