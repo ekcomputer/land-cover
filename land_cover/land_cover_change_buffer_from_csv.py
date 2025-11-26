@@ -727,7 +727,7 @@ def extractTimeSeriesFeatures_above_boreal(
 
     ## Load
     print("Calculating time series features...")
-    df = pd.read_csv(xlsx_out_norm_pth, nrows=3500) #, index_col=0) # HERE TODO
+    df = pd.read_csv(xlsx_out_norm_pth) #, nrows=3500) #, index_col=0)
     if "Unnamed: 0" in df.columns:
         df.drop(columns="Unnamed: 0", inplace=True)
 
