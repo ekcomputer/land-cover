@@ -422,3 +422,14 @@ def loadBAWLD():
 
 def load_regrid_BAWLD():
     return gpd.read_file(bawld_join_gswl_abz_filtered_pth)
+
+def load_reconstruct_time_series_above_boreal():
+    "All outputs are clipped to 3 decimal places for float csv variables. This function loads in"
+    "the underlying lake data set and joins to derived land cover variables, for which 3 decimals is fine"
+    "Also, the default time_series_features_csv_pth, in addition to lacking precision, lacks GSWL vars"
+    csv_out_time_series_features_short_pth = time_series_features_csv_pth.replace(
+        ".csv", "_short_tsFeatures.csv"
+    )
+    df = pd.read_csv(csv_out_time_series_features_short_pth)
+    gdf = gpd.read_file(GLAKES_gswl_pth, ignore_geometry=True)
+    return df.merge(gdf, on="Lake_id_glakes", how='left', validate="1:1")

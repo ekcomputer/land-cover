@@ -210,6 +210,61 @@ def reg_hexplot(
     plt.tight_layout()
 
 
+def reg_scatterplot(
+    gdf,
+    xvar,
+    yvar,
+    norm=None,
+    ax=None,
+    x_robust=False,
+    y_robust=False,
+    **kwargs,
+):
+    if norm is not None:
+        norm = LogNorm(vmin=1)
+    if ax is None:
+        fig, ax = plt.subplots()
+
+    xvals = gdf[xvar].values
+    yvals = gdf[yvar].values
+
+    # determine extent for hexbin based on robust percentiles if requested
+    xmin, xmax = np.nanmin(xvals), np.nanmax(xvals)
+    ymin, ymax = np.nanmin(yvals), np.nanmax(yvals)
+
+    if x_robust:
+        try:
+            p2, p98 = np.nanpercentile(xvals[~np.isnan(xvals)], [2, 98])
+            if p2 < p98:
+                xmin, xmax = p2, p98
+        except Exception:
+            pass
+
+    if y_robust:
+        try:
+            p2, p98 = np.nanpercentile(yvals[~np.isnan(yvals)], [2, 98])
+            if p2 < p98:
+                ymin, ymax = p2, p98
+        except Exception:
+            pass
+
+    sns.scatterplot(
+        gdf,
+        x=xvar,
+        y=yvar,
+        ax=ax,
+        **kwargs,
+    )
+    ax.set_xlabel(xvar)
+    ax.set_ylabel(yvar)
+    ax.set_title(f"{xvar} vs {yvar}")
+
+    # set axis lims to extent
+    ax.set_xlim(xmin, xmax)
+    ax.set_ylim(ymin, ymax)
+    plt.tight_layout()
+
+
 def plot_choro_and_hist(
     gdf, var, grid_crs=None, cmap="Greens", bins=None, figsize=(12, 5), hist_stats=False
 ):
@@ -340,3 +395,50 @@ def plot_neon_in_situ_timeseries_pandas(
     g.set_titles("{col_name}")
     plt.tight_layout()
     plt.show()
+
+
+## for yvar in yvars: Barplot of df, with bars categorized by Total_inun_trend
+def boxplots_by_group(
+    df,
+    yvar,
+    group_col="Total_inun_trend",
+    figsize=(6, 4),
+    showfliers=False,
+    whis=1.5,
+    show=True,
+    order=["decreasing", "no trend", "increasing"],
+):
+    """
+    Create boxplots for each yvar grouped by `group_col`, with a subsampled stripplot overlay.
+
+    Parameters
+    - df: DataFrame
+    - yvar: column name to plot on y axis
+    - group_col: categorical column to group by (default "Total_inun_trend")
+    - figsize: tuple for figure size
+    - showfliers: pass to sns.boxplot (default False to hide outliers)
+    - whis: whisker length for boxplot
+    - show: whether to call plt.show() for each figure
+    """
+
+    fig, ax = plt.subplots(figsize=figsize)
+    sns.boxplot(data=df, x=group_col, y=yvar, showfliers=showfliers, whis=whis, ax=ax, order=order)
+
+    # sample sizes
+    counts = df[group_col].value_counts()
+
+    for x, cat in enumerate(order):
+        n = counts.get(cat, 0)
+        ax.text(
+            x,  # x-position (category index)
+            ax.get_ylim()[0],  # top of plot
+            f"n={n:,}",  # label text
+            ha="center",
+            va="bottom",
+            fontsize=10,
+        )
+    ax.set_title(f"{yvar} by {group_col} (outliers hidden)")
+    plt.tight_layout()
+
+    if show:
+        plt.show()
