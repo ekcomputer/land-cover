@@ -837,7 +837,7 @@ def extractTimeSeriesFeatures_above_boreal(
     ]  # re-order cols # TODO import load.sortColumns
 
     ## Write out
-    stats.to_csv(csv_out_time_series_features_pth, float_format="%.3f")
+    stats.to_csv(csv_out_time_series_features_pth, float_format="%.3f")  # use "%.3g" for 3 sig figs
     print(f"Wrote time series output table: {csv_out_time_series_features_pth}")
 
     ## Save and write out most important stats

@@ -147,11 +147,50 @@ def add_regress(x, y, xy=(0.05, 0.9), **kwargs):
     ax.annotate(text, xy, xycoords="axes fraction", **kwargs)
 
 
-def reg_hexplot(gdf, xvar, yvar, gridsize=30, mincnt=40, vmin=None, vmax=None, norm=None, ax=None, **kwargs):
+def reg_hexplot(
+    gdf,
+    xvar,
+    yvar,
+    gridsize=30,
+    mincnt=40,
+    vmin=None,
+    vmax=None,
+    norm=None,
+    ax=None,
+    x_robust=False,
+    y_robust=False,
+    **kwargs,
+):
     if norm is not None:
         norm = LogNorm(vmin=1)
     if ax is None:
         fig, ax = plt.subplots()
+
+    xvals = gdf[xvar].values
+    yvals = gdf[yvar].values
+
+    # determine extent for hexbin based on robust percentiles if requested
+    xmin, xmax = np.nanmin(xvals), np.nanmax(xvals)
+    ymin, ymax = np.nanmin(yvals), np.nanmax(yvals)
+
+    if x_robust:
+        try:
+            p2, p98 = np.nanpercentile(xvals[~np.isnan(xvals)], [2, 98])
+            if p2 < p98:
+                xmin, xmax = p2, p98
+        except Exception:
+            pass
+
+    if y_robust:
+        try:
+            p2, p98 = np.nanpercentile(yvals[~np.isnan(yvals)], [2, 98])
+            if p2 < p98:
+                ymin, ymax = p2, p98
+        except Exception:
+            pass
+
+    extent = (xmin, xmax, ymin, ymax)
+
     hb = ax.hexbin(
         gdf[xvar],
         gdf[yvar],
@@ -161,6 +200,7 @@ def reg_hexplot(gdf, xvar, yvar, gridsize=30, mincnt=40, vmin=None, vmax=None, n
         vmin=vmin,
         vmax=vmax,
         norm=norm,
+        extent=extent,
         **kwargs,
     )
     ax.set_xlabel(xvar)

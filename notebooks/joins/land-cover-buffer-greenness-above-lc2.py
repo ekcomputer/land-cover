@@ -1,3 +1,7 @@
+"""Run as Step L4b: after join_gswl_lakes.ipynb.
+Independent of notebooks/joins/regrid_to_bawld_and_plot.ipynb
+"""
+
 import os
 
 import geopandas as gpd
@@ -15,6 +19,7 @@ from land_cover.land_cover_change_buffer_from_csv import (
 from land_cover.load import (
     bawld_join_gswl_abz_filtered_pth,
     greennessx2_albers_pth,
+    GLAKES_gswl_pth,
     loadBAWLD,
     loadGLAKES_GSWL,
     loadGreenness,
