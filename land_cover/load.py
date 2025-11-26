@@ -1,5 +1,6 @@
 """ Loads RS and GIS datasets"""
 from pathlib import Path
+import os
 
 import geopandas as gpd
 import numpy as np
@@ -60,6 +61,16 @@ GLAKES_gswl_abz_filtered_pth = Path(
 bawld_join_gswl_abz_filtered_pth = Path(
     "/Volumes/metis/ABOVE3/other_outputs/BAWLD_GLAKES_gswl_filtered.gpkg"
 )
+
+# Land cover time features
+# Variation: _norm, _core, _tsFeatures, _short_tsFeatures
+time_series_features_csv_pth = (
+    "/Volumes/metis/ABOVE3/land_cover_joins/out/glakes_green_abovelc25/xlsx/"
+    + os.path.basename(greennessx2_albers_pth).split(".")[0]
+    + "_landCoverBuffers.csv"
+)  # e.g. /Volumes/thebe/ABoVE2021/Mapping/out/xlsx/ABOVE_coordinates_for_Ethan_10-19-21_jn_PADLakesVis_landCoverBuffers.csv
+# shp_projected_out_pth = pth_shp_in.replace('_geom.shp', '_albers_geom.shp')
+
 
 ## Archived paths
 old_GLAKES_filtered_fix_aqveg_dist_pth = Path(

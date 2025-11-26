@@ -135,6 +135,7 @@ if use_simplified_classes:
 xlsx_out_norm_pth = csv_out_pth.replace('.csv', '_norm.csv') # e.g. /Volumes/thebe/ABoVE2021/Mapping/out/xlsx/ABOVE_coordinates_for_Ethan_10-19-21_jn_PADLakesVis_landCoverBuffers_norm.csv
 xlsx_out_time_series_features_pth = csv_out_pth.replace('.csv', '_tsFeatures.csv') # e.g. /Volumes/thebe/ABoVE2021/Mapping/out/xlsx/ABOVE_coordinates_for_Ethan_10-19-21_jn_PADLakesVis_landCoverBuffers_tsFeatures.csv
 xlsx_out_time_series_features_core_pth = xlsx_out_time_series_features_pth.replace('_tsFeatures.csv', '_core_tsFeatures.csv')
+csv_out_time_series_features_short_pth = xlsx_out_time_series_features_pth.replace("_tsFeatures", "_short_tsFeatures")
 shp_out_time_series_features_core_pth = xlsx_out_time_series_features_core_pth.replace('xlsx', 'shp')
 
 
@@ -678,6 +679,7 @@ def extractTimeSeriesFeatures_above_boreal(
     csv_out_time_series_features_pth=xlsx_out_time_series_features_pth,
     important_vars=important_vars,
     csv_out_time_series_features_core_pth=xlsx_out_time_series_features_core_pth,
+    csv_out_time_series_features_short_pth=csv_out_time_series_features_short_pth
     join_index="Lake_id_glakes",
     grouped_classes=["Trees", "Shrub", "Wetland", "Herb", "Sparse"],
 ):
@@ -811,10 +813,10 @@ def extractTimeSeriesFeatures_above_boreal(
 
     ## Save short version # not joined with rest of dataset
     stats.to_csv(
-        csv_out_time_series_features_pth.replace("_tsFeatures", "_short_tsFeatures"),
+        csv_out_time_series_features_short_pth,
         float_format="%.3f",
     )
-    print(f"Wrote short time series output table: {csv_out_time_series_features_pth}")
+    print(f"Wrote short time series output table: {csv_out_time_series_features_short_pth}")
 
     ## Join in lat/long and location from og-mod csv: load files
     gdf_og_data = gpd.read_file(pth_shp_in)

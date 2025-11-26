@@ -21,6 +21,7 @@ from land_cover.load import (
     plot_dir,
     above_lc_boreal_pth,
     above_lc_boreal_envelope_pth,
+    time_series_features_csv_pth,
 )
 from land_cover.plotting import plot_choro_and_hist, reg_hexplot
 
@@ -32,12 +33,7 @@ pth_lc_in = above_lc_boreal_pth
 # pth_lc_in_simp = "/Volumes/thebe/Wang-above-land-cover/ABoVE_LandCover_simplified.vrt"  # simplified 10-class landcover
 
 ## out
-csv_out_pth = (
-    "/Volumes/metis/ABOVE3/land_cover_joins/out/glakes_green_abovelc25/xlsx/"
-    + os.path.basename(pth_shp_in).split(".")[0]
-    + "_landCoverBuffers.csv"
-)  # e.g. /Volumes/thebe/ABoVE2021/Mapping/out/xlsx/ABOVE_coordinates_for_Ethan_10-19-21_jn_PADLakesVis_landCoverBuffers.csv
-# shp_projected_out_pth = pth_shp_in.replace('_geom.shp', '_albers_geom.shp')
+csv_out_pth = time_series_features_csv_pth
 plot_dir = os.path.join(plot_dir, "glakes_green_abovelc25")
 
 ## buffers, in order small -> large
@@ -252,9 +248,10 @@ csv_out_norm_pth = csv_out_pth.replace(
 csv_out_time_series_features_pth = csv_out_pth.replace(
     ".csv", "_tsFeatures.csv"
 )  # e.g. /Volumes/thebe/ABoVE2021/Mapping/out/xlsx/ABOVE_coordinates_for_Ethan_10-19-21_jn_PADLakesVis_landCoverBuffers_tsFeatures.csv
-csv_out_time_series_features_core_pth = csv_out_time_series_features_pth.replace(
-    "_tsFeatures.csv", "_core_tsFeatures.csv"
+csv_out_time_series_features_core_pth = csv_out_pth.replace(
+    ".csv", "_core_tsFeatures.csv"
 )
+csv_out_time_series_features_short_pth = csv_out_pth.replace(".csv", "_short_tsFeatures.csv")
 shp_out_time_series_features_core_pth = csv_out_time_series_features_core_pth.replace("csv", "gpkg")
 
 ## RUN
@@ -285,6 +282,7 @@ extractTimeSeriesFeatures_above_boreal(
     csv_out_time_series_features_pth,
     important_vars,
     csv_out_time_series_features_core_pth,
+    csv_out_time_series_features_short_pth,
     join_index="Lake_id_glakes",
     grouped_classes=["Trees", "Shrub", "Wetland", "Herb", "Sparse"],
 )
