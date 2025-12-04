@@ -338,13 +338,37 @@ def plot_neon_analytes_timeseries_pandas(
     analytes=("DOC", "DIC", "UV Absorbance (280 nm)", "TP", "TN"),
     decimate=1,
     hue="siteID",
+    site_id_filter=None,
+    outlier_iqr=[],
 ):
-    use_cols = ["collectDate", hue, "analyte", "analyteConcentration", "analyteUnits"]
+    use_cols = ["collectDate", "siteID", hue, "analyte", "analyteConcentration", "analyteUnits"]
     df = pd.read_csv(csv_path, usecols=use_cols, low_memory=False)
+    if site_id_filter:
+        df.query("siteID == @site_id_filter", inplace=True)
     df["collectDate"] = pd.to_datetime(df["collectDate"], errors="coerce", utc=True)
     df["analyteConcentration"] = pd.to_numeric(df["analyteConcentration"], errors="coerce")
     df = df[df["analyte"].isin(analytes)]
     df = df.dropna(subset=["collectDate", "analyteConcentration"])
+
+    # Remove outliers for analyteConcentration
+    title_addition = ""
+    if outlier_iqr:
+        title_addition = " (inliers)"
+        for analyte in analytes:
+            analyte_mask = df["analyte"] == analyte
+            analyte_values = df.loc[analyte_mask, "analyteConcentration"]
+            if len(analyte_values) > 0:
+                a, b = outlier_iqr
+                q1 = analyte_values.quantile(a)
+                q3 = analyte_values.quantile(b)
+                iqr = q3 - q1
+                lower_bound = q1 - 1.5 * iqr
+                upper_bound = q3 + 1.5 * iqr
+                outlier_mask = (df["analyte"] == analyte) & (
+                    (df["analyteConcentration"] < lower_bound)
+                    | (df["analyteConcentration"] > upper_bound)
+                )
+                df = df[~outlier_mask]
     if decimate > 1:
         df = df.iloc[::decimate, :]
 
@@ -362,6 +386,8 @@ def plot_neon_analytes_timeseries_pandas(
     )
     g.set_axis_labels("Date", "Concentration")
     g.set_titles("{col_name}")
+    if site_id_filter:
+        g.figure.suptitle(site_id_filter + title_addition)
     plt.tight_layout()
     plt.show()
 
