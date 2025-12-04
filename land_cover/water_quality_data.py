@@ -23,8 +23,8 @@ NEON_OUTPUT_DIR = "/Volumes/metis/ABOVE3/NEON/edk_out"
 # Just run once!
 # nu.stack_by_table(NEON_AK_CHEM_SURFACE_DIR_ZIP)
 # nu.stack_by_table(NEON_AK_WQ_DIR_ZIP)
-nu.stack_by_table(NEON_AK_RIP_STRUCT_DIR_ZIP)
-nu.stack_by_table(NEON_AK_RIP_COVER_DIR_ZIP)
+# nu.stack_by_table(NEON_AK_RIP_STRUCT_DIR_ZIP)
+# nu.stack_by_table(NEON_AK_RIP_COVER_DIR_ZIP)
 
 # def load_NEON_chem_surface():
 #     return pd.read_csv(os.path.join(NEON_AK_DIR, "stackedFiles/swc_externalLabDataByAnalyte.csv"))

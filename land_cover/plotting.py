@@ -337,8 +337,9 @@ def plot_neon_analytes_timeseries_pandas(
     csv_path="/Volumes/metis/ABOVE3/NEON/NEON_chem-surfacewater/stackedFiles/swc_externalLabDataByAnalyte.csv",
     analytes=("DOC", "DIC", "UV Absorbance (280 nm)", "TP", "TN"),
     decimate=1,
+    hue="siteID",
 ):
-    use_cols = ["collectDate", "siteID", "analyte", "analyteConcentration", "analyteUnits"]
+    use_cols = ["collectDate", hue, "analyte", "analyteConcentration", "analyteUnits"]
     df = pd.read_csv(csv_path, usecols=use_cols, low_memory=False)
     df["collectDate"] = pd.to_datetime(df["collectDate"], errors="coerce", utc=True)
     df["analyteConcentration"] = pd.to_numeric(df["analyteConcentration"], errors="coerce")
@@ -352,7 +353,7 @@ def plot_neon_analytes_timeseries_pandas(
         data=df,
         x="collectDate",
         y="analyteConcentration",
-        hue="siteID",
+        hue=hue,
         col="analyte",
         kind="line",
         marker="o",
@@ -367,35 +368,51 @@ def plot_neon_analytes_timeseries_pandas(
 
 def plot_neon_in_situ_timeseries_pandas(
     csv_path="/Volumes/metis/ABOVE3/NEON/NEON_chem-surfacewater/stackedFiles/swc_externalLabDataByAnalyte.csv",
-    use_cols=["startDateTime", "siteID", "chlorophyll"],
+    use_cols=["startDateTime", "chlorophyll"],
     decimate=1,
     date_var="startDateTime",
     y="chlorophyll",
+    hue="siteID",
+    date_filter=[],
+    resample=None
 ):
     "No tall df"
-    df = pd.read_csv(csv_path, usecols=use_cols, low_memory=False)
+    df = pd.read_csv(csv_path, usecols=use_cols + [hue], low_memory=False)
     df[date_var] = pd.to_datetime(df[date_var], errors="coerce", utc=True)
     df[y] = pd.to_numeric(df[y], errors="coerce")
     df = df.dropna(subset=[date_var, y])
+    if date_filter:
+        start_date, end_date = date_filter
+        df = df[(df[date_var] >= pd.to_datetime(start_date)) & (df[date_var] < pd.to_datetime(end_date))]
     if decimate > 1:
         df = df.iloc[::decimate, :]
+    # resample to 6-hour averages
+    # ensure date_var is datetime index for resampling
+    df = df.set_index(date_var)
 
+    if resample and hue and hue in df.columns:
+        # group by hue (e.g., siteID) and resample each group to 6H using mean of the value column
+        df = df.groupby(hue)[y].resample("6H").mean().reset_index()
+    else:
+        # global 6H resample
+        df = df[[y]].resample(resample).mean().reset_index()
     sns.set_style("whitegrid")
     g = sns.relplot(
         data=df,
         x=date_var,
         y=y,
-        hue="siteID",
+        hue=hue,
         kind="line",
         marker="o",
         # col_wrap=3,
         # facet_kws={"sharey": True},
+        markeredgecolor=None, markeredgewidth=0,
+        markersize=4
     )
     g.set_axis_labels("Date", "Concentration")
     g.set_titles("{col_name}")
     plt.tight_layout()
     plt.show()
-
 
 ## for yvar in yvars: Barplot of df, with bars categorized by Total_inun_trend
 def boxplots_by_group(
@@ -442,3 +459,14 @@ def boxplots_by_group(
 
     if show:
         plt.show()
+
+# testing
+if __name__== "__main__":
+    plot_neon_in_situ_timeseries_pandas(
+        "/Volumes/metis/ABOVE3/NEON/NEON_water-quality/stackedFiles/waq_instantaneous.csv",
+        use_cols=["startDateTime", "siteID", "chlorophyll"],
+        decimate=10000,
+        date_var="startDateTime",
+        y="chlorophyll",
+        date_filter=["2017-09-14 00:00:00+00:00", "2018-05-14 00:00:00+00:00"],
+    )
