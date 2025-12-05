@@ -6,7 +6,10 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 
-gee_table_pth = "/Volumes/metis/ABOVE3/Tom/gee_input/gee_cleaned_sample_data_2025-03-06.csv"
+gee_table_pth = "/Volumes/metis/ABOVE3/Tom/gee_input/gee_cleaned_sample_data_2025-03-06.csv" # old
+stolpmann_indexed_pth = (
+    "/Volumes/metis/ABOVE3/Stolpmann21-DOC-permafrost/edk_out/Stolpmann21_idx.gpkg"
+)
 bogard_output_path_raw = (
     "/Volumes/metis/ABOVE3/Digitizing/gee_asset_download/merged_asset_tables_20250812.shp"
 )
@@ -131,6 +134,16 @@ def loadDranga17():
     csv_in_pth = out_dir / f"{filename}.csv"
     df = pd.read_csv(csv_in_pth)
     return df, out_dir, filename
+
+
+def loadStolpmann21(region=None):
+    gdf = gpd.read_file(
+        "file:///Volumes/metis/ABOVE3/Stolpmann21-DOC-permafrost/Stolpmann-etal_2021_shapefile.zip"
+    )
+    if region=="na":
+        # Longitude < 0
+        gdf = gdf[gdf.Longitude < 0]
+    return gdf
 
 
 def loadWBD():

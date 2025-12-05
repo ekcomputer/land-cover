@@ -48,3 +48,18 @@ def pct_change(old, new, denom="old", multiply=True, zero_replace=np.nan):
 
 # Example usage:
 # df['NDVI_pct_84_11'] = pct_change(df, 'NDVI8499', 'NDVI1121')
+
+def create_unique_index(A, B):
+    """Note: the int version of the index returned by np.unique is dependent on the input dataset
+    size
+    """
+    # create unique integer index for each (Latitude, Longitude) pair by viewing float64 bit patterns
+    lat = A.to_numpy(dtype=np.float64)
+    lon = B.to_numpy(dtype=np.float64)
+
+    bits = np.column_stack((lat.view(np.int64), lon.view(np.int64)))
+    row_view = bits.view(np.dtype((np.void, bits.dtype.itemsize * bits.shape[1])))
+
+    _, loc_idx = np.unique(row_view, return_inverse=True)
+
+    return loc_idx
