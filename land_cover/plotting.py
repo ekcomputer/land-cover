@@ -15,6 +15,8 @@ from IPython.display import display
 from matplotlib.colors import Normalize
 import seaborn as sns
 from scipy.stats import pearsonr, linregress
+from scipy.stats import f_oneway
+from statannotations.Annotator import Annotator
 
 # from palettable.colorbrewer.diverging import PuOr_10_r
 # from palettable.colorbrewer.sequential import Oranges_9, BuPu_6
@@ -445,11 +447,13 @@ def boxplots_by_group(
     df,
     yvar,
     group_col="Total_inun_trend",
+    hue=None,
     figsize=(6, 4),
     showfliers=False,
     whis=1.5,
     show=True,
     order=["decreasing", "no trend", "increasing"],
+    anova=False,
 ):
     """
     Create boxplots for each yvar grouped by `group_col`, with a subsampled stripplot overlay.
@@ -463,9 +467,24 @@ def boxplots_by_group(
     - whis: whisker length for boxplot
     - show: whether to call plt.show() for each figure
     """
-
+    if anova:
+        figsize = (figsize[0]-1, figsize[1]+2)
     fig, ax = plt.subplots(figsize=figsize)
-    sns.boxplot(data=df, x=group_col, y=yvar, showfliers=showfliers, whis=whis, ax=ax, order=order)
+    sns.boxplot(data=df, x=group_col, y=yvar, showfliers=showfliers, whis=whis, ax=ax, order=order, hue=hue)
+
+    # Perform ANOVA and add significance annotations
+    if anova is True and hue is None:
+        groups = [df[df[group_col] == cat][yvar].dropna() for cat in order]
+        if len(groups) > 1:
+            f_stat, p_value = f_oneway(*groups)
+            print(f"ANOVA F-statistic: {f_stat:.2f}, p-value: {p_value:.2e}")
+
+        # Add significance annotations
+        # Filter pairs to include only valid group combinations present in the data
+        pairs = [(g1, g2) for g1 in order for g2 in order]
+        annotator = Annotator(ax, pairs, data=df, x=group_col, y=yvar, order=order, hue=hue)
+        annotator.configure(test="t-test_ind", text_format="star", loc="outside")
+        annotator.apply_and_annotate()
 
     # sample sizes
     counts = df[group_col].value_counts()

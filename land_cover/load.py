@@ -52,7 +52,9 @@ GLAKES_gswl_pth = Path(
 GLAKES_gswl_abz_pth = Path(
     "/Volumes/metis/Datasets/Liu_aq_veg/figshare/v4/25012091/edk_out/GLAKES_gswl_na_abz.gpkg"
 )
-
+GLAKES_tpcat_pth = Path(
+    "/Volumes/metis/Datasets/Liu_aq_veg/figshare/v4/25012091/edk_out/GLAKES_tcat.gpkg"
+)
 # land cover
 above_lc_boreal_pth = "/Volumes/metis/Datasets/Hu_Wang_ABOVE_landcover_2025/Boreal_LandCoverClasses_AK_CA/data/ABoVE_LandCover_boreal.vrt"
 above_lc_boreal_envelope_pth = "/Volumes/metis/Datasets/Hu_Wang_ABOVE_landcover_2025/Boreal_LandCoverClasses_AK_CA/data/edk_out/above_lc_boreal_envelope.shp"
@@ -68,6 +70,10 @@ bawld_join_gswl_abz_filtered_pth = Path(
 
 # Land cover time features
 # Variation: _norm, _core, _tsFeatures, _short_tsFeatures
+# _landCoverBuffers and *_norm have data for each year.
+# _short_tsFeatures has just time-series features
+# *_tsFeatures adds lake database data from gswl, etc.
+
 time_series_features_csv_pth = (
     "/Volumes/metis/ABOVE3/land_cover_joins/out/glakes_green_abovelc25/xlsx/"
     + os.path.basename(greennessx2_albers_pth).split(".")[0]
@@ -472,6 +478,8 @@ def loadGLAKES_GSWL(region="na_abz", filter_matches=False, force_reload=True):
             # Rewrites to speed up loading next time (currently, this will never execute)
             gdf.to_file(GLAKES_gswl_abz_pth)
             print(f"Overwrote abz file: {GLAKES_gswl_abz_pth}")
+    if "index_right" in gdf.columns:
+        gdf.drop(columns="index_right", inplace=True)
     return gdf
 
 
@@ -526,17 +534,19 @@ def loadBAWLD():
 def load_regrid_BAWLD():
     return gpd.read_file(bawld_join_gswl_abz_filtered_pth)
 
+
 def load_reconstruct_time_series_above_boreal():
     "All outputs are clipped to 3 decimal places for float csv variables. This function loads in"
     "the underlying lake data set and joins to derived land cover variables, for which 3 decimals is fine"
     "Also, the default time_series_features_csv_pth, in addition to lacking precision, lacks GSWL vars"
+    "above_boreal refers to above landcover v2 boreal dataset"
     from land_cover.utils import pct_change
 
     csv_out_time_series_features_short_pth = time_series_features_csv_pth.replace(
         ".csv", "_short_tsFeatures.csv"
     )
     df = pd.read_csv(csv_out_time_series_features_short_pth)
-    gdf = gpd.read_file(GLAKES_gswl_pth, ignore_geometry=True)
+    gdf = gpd.read_file(GLAKES_tpcat_pth, ignore_geometry=True)
     df = df.merge(gdf, on="Lake_id_glakes", how="left", validate="1:1")
     # Ensure required base columns exist so downstream derived columns can be created safely.
     if "NDVI0010" not in df.columns:
@@ -554,5 +564,72 @@ def load_reconstruct_time_series_above_boreal():
         df["water_pchange_p1p3_glakes"] = pct_change(df.area_1984_1999_wm, df.area_2010_2019_wm)
         df["water_pchange_p2p3_glakes"] = pct_change(df.area_2000_2009_wm, df.area_2010_2019_wm)
         df["water_pchange_p1p2_glakes"] = pct_change(df.area_1984_1999_wm, df.area_2000_2009_wm)
-    
+
     return df
+
+
+def load_topocat_catchments():
+    """Load TopoCat catchments for specified PFAF zones and merge into single GeoDataFrame.
+
+    Loads Catchments_pfaf_## layers for zones: 81, 82, 83, 84, 85, 86, 78, 71, 72, 73, 74
+    from the PLD_TopoCat_v1.1 geodatabase.
+
+    # TODO: pick vars
+
+    Returns:
+        GeoDataFrame: Merged catchments from all specified PFAF zones with original CRS
+    """
+    gdb_path = "/Volumes/metis/Datasets/TOPOCAT-PLD/PLD_TopoCat_v1.1.gdb"
+    pfaf_zones = [81, 82, 83, 84, 85, 86, 78, 71, 72, 73, 74]
+
+    gdfs = []
+    for pfaf in pfaf_zones:
+        layer_name = f"Catchments_pfaf_{pfaf:02d}"
+        gdf = gpd.read_file(gdb_path, layer=layer_name)
+        gdfs.append(gdf)
+
+    # Merge all GeoDataFrames
+    result = pd.concat(gdfs, ignore_index=True)
+    result = gpd.GeoDataFrame(result, geometry="geometry", crs=gdfs[0].crs)
+
+    return result
+
+
+def load_topocat_pld_lakes():
+    """Load TopoCat PLD v106 lakes for specified Pfafstetter level2 basins and merge into single
+    GeoDataFrame.
+
+    Loads Lakes_pfaf_## layers for zones: 81, 82, 83, 84, 85, 86, 78, 71, 72, 73, 74
+    from the PLD_TopoCat_v1.1 geodatabase.
+
+    Returns:
+        GeoDataFrame: Merged lakes from all specified PFAF zones with original CRS
+    """
+    gdb_path = "/Volumes/metis/Datasets/TOPOCAT-PLD/PLD_TopoCat_v1.1.gdb"
+    pfaf_zones = [81, 82, 83, 84, 85, 86, 78, 71, 72, 73, 74]
+
+    gdfs = []
+    for pfaf in pfaf_zones:
+        layer_name = f"Lakes_pfaf_{pfaf:02d}"
+        gdf = gpd.read_file(
+            gdb_path,
+            layer=layer_name,
+            columns=[
+                "lake_id",
+                "Lake_area",
+                "Outlet_n",
+                "Cat_a_lake",
+                "Lake_type",
+                "Lake_order",
+                "Laktyp_mhv",
+            ],
+        )
+        # Rename columns by appending _tpcat
+        gdf = gdf.rename(columns={col: f"{col}_tpcat" for col in gdf.columns if col != "geometry"})
+        gdfs.append(gdf)
+
+    # Merge all GeoDataFrames
+    result = pd.concat(gdfs, ignore_index=True)
+    result = gpd.GeoDataFrame(result, geometry="geometry", crs=gdfs[0].crs)
+
+    return result

@@ -88,6 +88,9 @@ df["water_pchange_p1p3"] = pct_change(df.area_1984_1999, df.area_2010_2019, deno
 ```
 Default multiplies by 100 for percentage (set `multiply=False` for fraction).
 
+### Data inconsistencies and error catching
+- rather than using excessive try/accept blocks, add comments stating your assumptions. For example, before performing a join, you don't need to check that the join columns exist in the data sets. For really obvious checks, you can ignore them. For example, before loading a file, you don't need to check if it exists.
+
 ## Jupyter Notebook Patterns
 
 ### Standard Imports Block
