@@ -1,6 +1,6 @@
 """ Loads RS and GIS datasets"""
-from pathlib import Path
 import os
+from pathlib import Path
 
 import geopandas as gpd
 import numpy as np
@@ -530,9 +530,29 @@ def load_reconstruct_time_series_above_boreal():
     "All outputs are clipped to 3 decimal places for float csv variables. This function loads in"
     "the underlying lake data set and joins to derived land cover variables, for which 3 decimals is fine"
     "Also, the default time_series_features_csv_pth, in addition to lacking precision, lacks GSWL vars"
+    from land_cover.utils import pct_change
+
     csv_out_time_series_features_short_pth = time_series_features_csv_pth.replace(
         ".csv", "_short_tsFeatures.csv"
     )
     df = pd.read_csv(csv_out_time_series_features_short_pth)
     gdf = gpd.read_file(GLAKES_gswl_pth, ignore_geometry=True)
-    return df.merge(gdf, on="Lake_id_glakes", how='left', validate="1:1")
+    df = df.merge(gdf, on="Lake_id_glakes", how="left", validate="1:1")
+    # Ensure required base columns exist so downstream derived columns can be created safely.
+    if "NDVI0010" not in df.columns:
+        df["NDVI0010"] = np.nan
+    else:
+        # Compute NDVI change
+        df["NDVI_p1p2_liu"] = df["NDVI0010"] - df["NDVI8499"]
+        df["NDVI_p1p3_liu"] = df["NDVI1121"] - df["NDVI8499"]
+        df["NDVI_p2p3_liu"] = df["NDVI1121"] - df["NDVI0010"]
+
+    if "area_1984_1999_wm" not in df.columns:
+        df["area_1984_1999_wm"] = np.nan
+    else:
+        # Compute water percent change
+        df["water_pchange_p1p3_glakes"] = pct_change(df.area_1984_1999_wm, df.area_2010_2019_wm)
+        df["water_pchange_p2p3_glakes"] = pct_change(df.area_2000_2009_wm, df.area_2010_2019_wm)
+        df["water_pchange_p1p2_glakes"] = pct_change(df.area_1984_1999_wm, df.area_2000_2009_wm)
+    
+    return df
