@@ -13,6 +13,7 @@ stolpmann_indexed_pth = (
 bogard_output_path_raw = (
     "/Volumes/metis/ABOVE3/Digitizing/gee_asset_download/merged_asset_tables_20250812.shp"
 )
+dranga_shoreline_pth = "/Volumes/metis/Datasets/Dranga-2017/edk_out/shp/dranga17_shorelines.gpkg"
 efflux_bogard_dict = {
     'AvgOfpCO2':'pco2uatm',
     'Lat_DD': 'lat',
@@ -126,13 +127,43 @@ def loadBogardSuppl():
     return df, out_dir, filename
 
 
+def _parse_google_earth_text(df:pd.DataFrame):
+    "Modified in place"
+    # extract Sample No, Latitude, Longitude from PopupInfo
+    df["Sample No"] = df["PopupInfo"].str.extract(r"Sample No:\s*([A-Za-z0-9.-]+)").astype(float)
+    df["Latitude"]  = df["PopupInfo"].str.extract(r"Latitude:\s*([0-9.+-]+)").astype(float)
+    df["Longitude"] = df["PopupInfo"].str.extract(r"Longitude:\s*([0-9.+-]+)").astype(float)
+    df.drop(columns="PopupInfo", inplace=True)
+
+
+def load_prelim_matchup_data():
+    # has lat/lon, TopoCat lake_id
+    df_matchup_data = pd.read_excel(
+        "/Volumes/metis/ABOVE3/Tom/PrelimLakeMatchupData_2024-10-21.xlsx",
+        sheet_name="Measurements",
+        usecols=["PopupInfo", "Name", "lake_id"],
+    ).query("Name == 'LitReviewLakes'")
+    _parse_google_earth_text(df_matchup_data)
+    df_matchup_data.dropna(subset="Longitude", inplace=True)  # keeps only Dragna et al. paper
+    return df_matchup_data
+
+
+def load_lit_review_lakes_jn_pld(bbox=None):
+    "Partial dataset"
+    return gpd.read_file(
+        "/Volumes/metis/ABOVE3/Tom/Selected_PLD_Lakes_2024-10-21/LitReviewLakes_selected_PLDLakes_2024-10-11.shp",
+        bbox=bbox,
+    ).dropna(subset="lake_id")[["lake_id", "geometry"]]
+
+
 def loadDranga17():
-    """Note: companion csv with MDL and og excel with full field descriptions"""
+    """Note: companion csv with min detection level and og excel with full field descriptions"""
     wd = Path("/Volumes/metis/Datasets/Dranga-2017")
     filename = "as-2017-0039suppla"
     out_dir = wd / "edk_out"
     csv_in_pth = out_dir / f"{filename}.csv"
     df = pd.read_csv(csv_in_pth)
+    df["DOC"] = df["DOC"].replace(' ', np.nan).astype(float)
     return df, out_dir, filename
 
 
@@ -149,6 +180,65 @@ def loadStolpmann21(region=None):
 def loadWBD():
     '''Note: bbox is for AK'''
     return gpd.read_file('/Volumes/thebe/Other/Feng-High-res-inland-surface-water-tundra-boreal-NA/edk_out/fixed_geoms/WBD.shp', engine='pyogrio', bbox = (-170, 51, -125 , 72)) # bbox for NA
+
+
+def load_gee_input(
+    path="/Volumes/metis/ABOVE3/Tom/gee_input/updated/gee_cleaned_sample_data_2025-07-09_suppl.csv",
+    source="LitReviewLakes",
+    western_hem=True,
+):
+    """ this is the input file Tom used for GEE digitizing, and it indicates whether a lake has
+    been matched to PLD"""
+    usecols = ["CurrentlyM", "Latitude", "Longitude", "SampleUID", "Source", "WesternHem"]
+
+    df = pd.read_csv(path, usecols=usecols)
+
+    # df["Latitude"] = pd.to_numeric(df["Latitude"], errors="coerce")
+    # df["Longitude"] = pd.to_numeric(df["Longitude"], errors="coerce")
+
+    df = df.dropna(subset=["Latitude", "Longitude"])
+    if source:
+        df = df[df["Source"] == source]
+    if western_hem:
+        df = df[df["WesternHem"] == True]
+    # gdf = gpd.GeoDataFrame(
+    #     df,
+    #     geometry=gpd.points_from_xy(df["Longitude"], df["Latitude"]),
+    #     crs="EPSG:4326",
+    # )
+
+    return df
+
+def clean_gee_results(gdf:gpd.GeoDataFrame):
+    """remove duplicates by lake index `SampleUID` based on order of priority of the type of match
+    "savetype": "New polygon" is preferred over "New polygon - manual classification" over 
+    "MatchedManuallyDrawnPolygon" over "MatchedManuallyDrawnPolygonThisSession" over MatchedPLD
+    """
+    savetype_priority = {
+        "New polygon": 1,
+        "New polygon - manual classification": 2,
+        "MatchedManuallyDrawnPolygon": 3,
+        "MatchedManuallyDrawnPolygonThisSession": 4,
+        "MatchedPLD": 5,
+    }
+    gdf = gdf.copy()
+    gdf["savetype_priority"] = gdf["savetype"].map(savetype_priority)
+    gdf = gdf.sort_values("savetype_priority")
+    gdf = gdf.drop_duplicates(subset="SampleUID", keep="first")
+    gdf = gdf.drop(columns="savetype_priority")
+    return gdf
+
+
+def load_gee_digitized(
+    path="/Volumes/metis/ABOVE3/Digitizing/gee_asset_download/Tom/merged_asset_tables_20251118.shp",
+    prefix="LRL",
+):
+    """ tom and Andy digitized these lakes in GEE"""
+    gdf = gpd.read_file(path)
+    gdf = gdf[gdf["savetype"] != "Mismatch"]
+    gdf = gdf[gdf["sampleUID"].str.startswith(prefix)]
+    gdf[gdf.pld_match == -99999.31415] = np.nan
+    return clean_gee_results(gdf.rename(columns={"sampleUID": "SampleUID"}))
 
 
 def loadLandCoverJoined():
