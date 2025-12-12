@@ -41,7 +41,8 @@ dependencies = [
   "python-ternary",
   "earthengine-api",
   "neonutilities",
-  "statannotations~=0.7.2"
+  "statannotations~=0.7.2",
+  "pytest"
 ]
 
 requires-python = ">=3.9,<3.13"
