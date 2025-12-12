@@ -13,9 +13,10 @@ Write three outputs:
 
 TODO: 
 * Check that water normalization only refers to largest/central lake within buffer.
-* Add watershed buffer
+* Add watershed buffer x
 * IMPORTANT: Find a way to automatically include Lat/Long and any note columns in final spreadsheet (perhaps join in?) Right now, I'm just using a quick fix in Excel.
-
+* Remove shortcut hack to skip large lakes -> eventually resample coarsen landcover to use for large lakes
+* Remove hacks for numeric types if running on GLAKES again
 
 2025 problems:
 '''
@@ -146,6 +147,9 @@ def extractBufferZonalHist(
     assert len(poly) >= 1, "poly must contain at least one geometry"
     lake_geom = poly.geometry.iloc[0] if len(poly) == 1 else poly.unary_union
 
+    # Hack: skip large datasets:
+    if lake_geom.area > 50e6:
+        return None
     with rio.open(pth_lc_in) as src:
         assert src.crs == poly.crs, "CRS mismatch"
 
@@ -371,7 +375,7 @@ def extractTimeSeriesForLakes(
         payloads.append(
             {
                 "Lake_name": int(row["Lake_name"]),
-                join_index: int(row[join_index]),
+                join_index: row[join_index], # HERE HACK not to use int
                 "Area_m2": float(row["Area_m2"]),
                 "Perim_m2": float(row["Perim_m2"]),
                 "geometry_wkb": row.geometry.wkb,
@@ -478,6 +482,7 @@ def normalizeTimeSeries_above_boreal(
     classes_wet=classes_wet,
     classes_dry=classes_dry,
     wetland_class="Wetland",
+    index_class="Lake_id_glakes",
 ):
     """
     As above, but modified for the new land cover classes in Hu et al. 2025.
@@ -485,7 +490,7 @@ def normalizeTimeSeries_above_boreal(
     classes = np.unique(classes_dry + classes_wet).tolist()
     ## Load
     print("Normalizing land cover...")
-    usecols = classes + ["Year", "Lake_id_glakes", "Area_m2", "Perim_m2"]
+    usecols = classes + ["Year", index_class, "Area_m2", "Perim_m2"]
     df = pd.read_csv(xlsx_out_pth, usecols=usecols) #, nrows=1000) # all but Lake_name and Buffer_m
 
     ## Find wetland percent, like michela does, by taking: (L+B+F)/(L+B+F+W)*100 (TODO: ensure it only comes from largest/central water body within buffer)
@@ -688,8 +693,8 @@ def extractTimeSeriesFeatures_above_boreal(
         g: pd.DataFrame, forest={"Deciduous_Forest", "Evergreen_Forest", "Mixed_Forest"}
     ) -> pd.Series:
         # g = g.sort_values("Year")
-        first = g.iloc[0].astype(float)
-        last = g.iloc[-1].astype(float)
+        first = g.iloc[0] #.astype(float) # HACK
+        last = g.iloc[-1] # .astype(float)
 
         first_dry = first[classes_dry_rn]
         last_dry = last[classes_dry_rn]
@@ -837,12 +842,12 @@ def extractTimeSeriesFeatures_above_boreal(
     ]  # re-order cols # TODO import load.sortColumns
 
     ## Write out
-    stats.to_csv(csv_out_time_series_features_pth, float_format="%.3f")  # use "%.3g" for 3 sig figs
+    stats.to_parquet(csv_out_time_series_features_pth.replace(".csv", ".parquet"), index=False)
     print(f"Wrote time series output table: {csv_out_time_series_features_pth}")
 
     ## Save and write out most important stats
-    stats.loc[:, important_vars].to_csv(
-        csv_out_time_series_features_core_pth, float_format="%.3f"
+    stats.loc[:, important_vars].to_parquet(
+        csv_out_time_series_features_core_pth.replace(".csv", ".parquet"), index=False
     )
     print(
         f"Wrote time series output table (greatest hits): {csv_out_time_series_features_core_pth}"

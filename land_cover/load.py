@@ -68,6 +68,11 @@ bawld_join_gswl_abz_filtered_pth = Path(
     "/Volumes/metis/ABOVE3/other_outputs/BAWLD_GLAKES_gswl_filtered.gpkg"
 )
 doc_jn_catchment_pth = Path("/Volumes/metis/ABOVE3/Digitizing/catchments/doc_jn_catchments.gpkg")
+time_series_features_doc_parquet_pth = (
+    "/Volumes/metis/ABOVE3/Digitizing/catchments/land-cover/"
+    + os.path.basename(doc_jn_catchment_pth).split(".")[0]
+    + "_landCoverBuffers.parquet"
+)
 
 # Land cover time features
 # Variation: _norm, _core, _tsFeatures, _short_tsFeatures
