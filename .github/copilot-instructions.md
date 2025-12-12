@@ -134,3 +134,4 @@ applyTo: "**/*.py"
 - Use numpy docstring syntax 
 - Ensure functions have descriptive names and include type hints when it is clear which type to hint.
 - Maintain proper indentation (use 4 spaces for each level of indentation).
+- Strive to be concise and readable without using more lines than needed

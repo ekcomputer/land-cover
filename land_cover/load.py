@@ -67,7 +67,7 @@ GLAKES_gswl_abz_filtered_pth = Path(
 bawld_join_gswl_abz_filtered_pth = Path(
     "/Volumes/metis/ABOVE3/other_outputs/BAWLD_GLAKES_gswl_filtered.gpkg"
 )
-doc_jn_catchment_pth = Path("/Volumes/metis/ABOVE3/Digitizing/catchments")
+doc_jn_catchment_pth = Path("/Volumes/metis/ABOVE3/Digitizing/catchments/doc_jn_catchments.gpkg")
 
 # Land cover time features
 # Variation: _norm, _core, _tsFeatures, _short_tsFeatures
@@ -151,7 +151,7 @@ def load_prelim_matchup_data():
         usecols=["PopupInfo", "Name", "lake_id"],
     ).query("Name == 'LitReviewLakes'")
     _parse_google_earth_text(df_matchup_data)
-    df_matchup_data.dropna(subset="Longitude", inplace=True)  # keeps only Dragna et al. paper
+    df_matchup_data.dropna(subset="Longitude", inplace=True)  # keeps only Dranga et al. paper
     return df_matchup_data
 
 
@@ -170,6 +170,7 @@ def loadKurek():
     shorelines_path = "/Volumes/metis/ABOVE3/Kurek_GBC22_data/out/shorelines/ABOVE_coordinates_for_Ethan_10-19-21_geom.shp"
 
     df_csv = pd.read_csv(dataset_path)
+    df_csv.columns = df_csv.columns.str.strip()
     gdf_shp = gpd.read_file(shorelines_path)
     merged = df_csv.merge(
         gdf_shp, left_on="Match_name", right_on="Sample_nam", how="left", indicator=False
@@ -210,7 +211,7 @@ def loadStolpmann21(region=None):
 def loadShahabinia25():
     return pd.read_csv(
         "/Volumes/metis/ABOVE3/Shahabinia25/Fulldataset_LakePulse_DOM_PARAFAC_FTMS.csv",
-        index_col="sample.no",
+        # index_col="sample.no",
     )
 
 
@@ -606,6 +607,8 @@ def load_topocat_catchments():
     # Merge all GeoDataFrames
     result = pd.concat(gdfs, ignore_index=True)
     result = gpd.GeoDataFrame(result, geometry="geometry", crs=gdfs[0].crs)
+    # Append '_tpcat' to all non-geometry columns
+    result = result.rename(columns={col: f"{col}_tpcat" for col in result.columns if col != "geometry"})
 
     return result
 
@@ -658,6 +661,7 @@ def harmonize_doc_dataset(
     area_var,
     doc_var,
     dic_var,
+    sample_idx_prefix="",
 ):
     """Harmonize a DOC dataset by renaming variables and creating geometry if needed.
 
@@ -677,6 +681,8 @@ def harmonize_doc_dataset(
         Name of DOC column
     dic_var : str
         Name of DIC column (can be empty string for missing data)
+    sample_idx_prefix : str
+        Two-letter prefix to prepend to dataset index to create unique sample_idx
 
     Returns
     -------
@@ -689,6 +695,7 @@ def harmonize_doc_dataset(
     # Drop geometry temporarily if present
     has_geometry = isinstance(df, gpd.GeoDataFrame)
     if has_geometry:
+        df = df.to_crs("EPSG:4326")
         df = pd.DataFrame(df)
 
     # Build rename dictionary for non-empty variable names
@@ -701,7 +708,7 @@ def harmonize_doc_dataset(
 
     # Add area if provided
     if area_var:
-        rename_dict[area_var] = "area"
+        rename_dict[area_var] = "area_km2"
 
     # Add DIC if provided
     if dic_var:
@@ -709,11 +716,17 @@ def harmonize_doc_dataset(
 
     df = df.rename(columns=rename_dict)
 
+    # Create unique sample_idx with prefix if provided
+    if sample_idx_prefix:
+        df["sample_idx"] = sample_idx_prefix + df.index.astype(str)
+
     # Normalize longitude to -180 to 180 range
-    if "lon" in df.columns:
-        df["lon"] = df["lon"].apply(
-            lambda x: x + 360 if pd.notna(x) and x < -180 else (x - 360 if pd.notna(x) and x > 180 else x)
+
+    df["lon"] = df["lon"].apply(
+        lambda x: (
+            x + 360 if pd.notna(x) and x < -180 else (x - 360 if pd.notna(x) and x > 180 else x)
         )
+    )
 
     # Create geometry from lat/lon if not already present
     if "geometry" not in df.columns:
@@ -723,16 +736,24 @@ def harmonize_doc_dataset(
             crs="EPSG:4326",
         )
     else:
+        if df["geometry"].isna().any():
+            df.loc[df["geometry"].isna(), "geometry"] = gpd.points_from_xy(
+            df.loc[df["geometry"].isna(), "lon"],
+            df.loc[df["geometry"].isna(), "lat"]
+            )
         gdf = gpd.GeoDataFrame(df, geometry="geometry", crs="EPSG:4326")
 
     return gdf
 
 
-def load_harmonized_doc():
+def load_harmonized_doc(NH=True) -> gpd.GeoDataFrame:
     """Load and harmonize all DOC datasets into a single GeoDataFrame.
 
     Combines data from Kurek, Dranga17, Stolpmann21, and Shahabinia25 with
     standardized column names and geometry.
+
+    sample_id is index from original data set, but it may not be unique
+    sample_idx is my unique index
 
     Returns
     -------
@@ -748,24 +769,31 @@ def load_harmonized_doc():
         df_kurek,
         lat_var="Latitude",
         lon_var="Longitude",
-        sample_id_var="Match_name",
-        area_var="",
-        doc_var="DOC_mg_L",
+        sample_id_var="Sample",
+        area_var="lake_area_km2",
+        doc_var="DOC (mg L-1)",
         dic_var="",
+        sample_idx_prefix="K",
     )
     gdf_kurek["source"] = "Kurek23"
+    # gdf_kurek["area_km2"] = gdf_kurek.to_crs("ESRI:102001").area / 1e6
     gdfs.append(gdf_kurek)
 
     # Dranga17
-    df_dranga, _, _ = loadDranga17()
+    # df_dranga, _, _ = loadDranga17()
+    # df_dranga = load_prelim_matchup_data()
+    dranga_shoreline_chem_pth = dranga_shoreline_pth.replace(".gpkg", "_chem.gpkg")
+    df_dranga = gpd.read_file(dranga_shoreline_chem_pth)
     gdf_dranga = harmonize_doc_dataset(
         df_dranga,
         lat_var="Latitude",
         lon_var="Longitude",
         sample_id_var="Sample No",
+        # area_var="area",
         area_var="Lake Surface Area",
         doc_var="DOC",
         dic_var="DIC",
+        sample_idx_prefix="D",
     )
     gdf_dranga["source"] = "Dranga17"
     gdfs.append(gdf_dranga)
@@ -780,6 +808,7 @@ def load_harmonized_doc():
         area_var="",
         doc_var="DOC",
         dic_var="",
+        sample_idx_prefix="S",
     )
     gdf_stolpmann["source"] = "Stolpmann21"
     gdfs.append(gdf_stolpmann)
@@ -794,12 +823,22 @@ def load_harmonized_doc():
         area_var="area",
         doc_var="DOC",
         dic_var="DIC",
+        sample_idx_prefix="H",
     )
     gdf_shahabinia["source"] = "Shahabinia25"
     gdfs.append(gdf_shahabinia)
 
     # Concatenate all datasets
-    result = pd.concat(gdfs, ignore_index=True)
+    result = pd.concat(gdfs, ignore_index=True)[
+        ["lat", "lon", "sample_id", "sample_idx", "area_km2", "doc", "dic", "source", "geometry"]
+    ]
+    if NH:
+        result = result[result["lon"] < 0]
     result = gpd.GeoDataFrame(result, geometry="geometry", crs="EPSG:4326")
+
+    # Check if sample_idx is unique
+    sample_idx_counts = result.sample_idx.value_counts()
+    duplicates = sample_idx_counts[sample_idx_counts > 1]
+    assert len(duplicates) == 0, f"Found {len(duplicates)} duplicate sample_idx values"
 
     return result

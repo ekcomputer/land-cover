@@ -162,12 +162,14 @@ class TestLoadHarmonizedDoc:
         required_cols = ["lat", "lon", "sample_id", "doc", "source", "geometry"]
         for col in required_cols:
             assert col in result.columns, f"Missing required column: {col}"
-
+        nan_ratios = result[required_cols].isna().mean()
+        assert (nan_ratios < 0.1).all(), f"More than 10% NaN values found in required columns: {nan_ratios[nan_ratios >= 0.1]}"
+        
     def test_harmonized_doc_has_source_tags(self):
         """Test that each row has a source tag."""
         result = load_harmonized_doc()
 
-        expected_sources = {"Kurek", "Dranga17", "Stolpmann21", "Shahabinia25"}
+        expected_sources = {"Kurek23", "Dranga17", "Stolpmann21", "Shahabinia25"}
         actual_sources = set(result["source"].unique())
 
         # Check all expected sources are present
@@ -227,7 +229,7 @@ class TestLoadHarmonizedDoc:
         source_counts = result["source"].value_counts()
 
         # Each source should have at least some records
-        for source in ["Kurek", "Dranga17", "Stolpmann21", "Shahabinia25"]:
+        for source in ["Kurek23", "Dranga17", "Stolpmann21", "Shahabinia25"]:
             assert source_counts[source] > 0, f"No records from {source}"
 
     def test_harmonized_doc_optional_columns(self):
