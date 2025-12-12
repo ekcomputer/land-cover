@@ -453,6 +453,7 @@ def boxplots_by_group(
     whis=1.5,
     show=True,
     order=["decreasing", "no trend", "increasing"],
+    hue_order=None,
     anova=False,
 ):
     """
@@ -470,7 +471,7 @@ def boxplots_by_group(
     if anova:
         figsize = (figsize[0]-1, figsize[1]+2)
     fig, ax = plt.subplots(figsize=figsize)
-    sns.boxplot(data=df, x=group_col, y=yvar, showfliers=showfliers, whis=whis, ax=ax, order=order, hue=hue)
+    sns.boxplot(data=df, x=group_col, y=yvar, showfliers=showfliers, whis=whis, ax=ax, order=order, hue=hue, hue_order=hue_order)
 
     # Perform ANOVA and add significance annotations
     if anova is True and hue is None:
