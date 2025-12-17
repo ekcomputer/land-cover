@@ -59,6 +59,9 @@ GLAKES_tpcat_pth = Path(
 above_lc_boreal_pth = "/Volumes/metis/Datasets/Hu_Wang_ABOVE_landcover_2025/Boreal_LandCoverClasses_AK_CA/data/ABoVE_LandCover_boreal.vrt"
 above_lc_boreal_envelope_pth = "/Volumes/metis/Datasets/Hu_Wang_ABOVE_landcover_2025/Boreal_LandCoverClasses_AK_CA/data/edk_out/above_lc_boreal_envelope.shp"
 
+cec_30m_lc_pth = "/Volumes/metis/ABOVE3/cec-land-cover/land_cover_2010v3_30m_tif/NA_NALCMS_landcover_2010v3_30m/data/NA_NALCMS_landcover_2010v3_30m.tif"
+cec_30m_lc_rs250_pth = "/Volumes/metis/ABOVE3/cec-land-cover/land_cover_2010v3_30m_tif/NA_NALCMS_landcover_2010v3_30m/data/edk_out/NA_NALCMS_landcover_2010v3_250m.tif"
+
 ## Working paths
 # filtered based on some criteria
 GLAKES_gswl_abz_filtered_pth = Path(
@@ -68,10 +71,10 @@ bawld_join_gswl_abz_filtered_pth = Path(
     "/Volumes/metis/ABOVE3/other_outputs/BAWLD_GLAKES_gswl_filtered.gpkg"
 )
 doc_jn_catchment_pth = Path("/Volumes/metis/ABOVE3/Digitizing/catchments/doc_jn_catchments.gpkg")
-time_series_features_doc_parquet_pth = (
+time_series_features_cec_doc_parquet_pth = (
     "/Volumes/metis/ABOVE3/Digitizing/catchments/land-cover/"
     + os.path.basename(doc_jn_catchment_pth).split(".")[0]
-    + "_landCoverBuffers.parquet"
+    + "_cecBuffers.parquet"
 )
 
 # Land cover time features
