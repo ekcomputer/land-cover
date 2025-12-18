@@ -55,6 +55,9 @@ GLAKES_gswl_abz_pth = Path(
 GLAKES_tpcat_pth = Path(
     "/Volumes/metis/Datasets/Liu_aq_veg/figshare/v4/25012091/edk_out/GLAKES_tcat.gpkg"
 )
+# GLAKES_tpcat_pth_with_ancillary = (
+#     "/Volumes/metis/Datasets/Liu_aq_veg/figshare/v4/25012091/edk_out/GLAKES_tcat.gpkg"
+# )
 # land cover
 above_lc_boreal_pth = "/Volumes/metis/Datasets/Hu_Wang_ABOVE_landcover_2025/Boreal_LandCoverClasses_AK_CA/data/ABoVE_LandCover_boreal.vrt"
 above_lc_boreal_envelope_pth = "/Volumes/metis/Datasets/Hu_Wang_ABOVE_landcover_2025/Boreal_LandCoverClasses_AK_CA/data/edk_out/above_lc_boreal_envelope.shp"
@@ -71,6 +74,8 @@ bawld_join_gswl_abz_filtered_pth = Path(
     "/Volumes/metis/ABOVE3/other_outputs/BAWLD_GLAKES_gswl_filtered.gpkg"
 )
 doc_jn_catchment_pth = Path("/Volumes/metis/ABOVE3/Digitizing/catchments/doc_jn_catchments_laea.gpkg")
+
+# time_series_features_doc_parquet_pth =
 time_series_features_cec_doc_parquet_pth = (
     "/Volumes/metis/ABOVE3/Digitizing/catchments/land-cover/"
     + os.path.basename(doc_jn_catchment_pth).split(".")[0]
@@ -91,7 +96,10 @@ time_series_features_csv_pth = (
 )  # e.g. /Volumes/thebe/ABoVE2021/Mapping/out/xlsx/ABOVE_coordinates_for_Ethan_10-19-21_jn_PADLakesVis_landCoverBuffers.csv
 # shp_projected_out_pth = pth_shp_in.replace('_geom.shp', '_albers_geom.shp')
 
-
+# ts features with ecoregion
+ts_ecoregion_pth = (
+    "/Volumes/metis/ABOVE3/Digitizing/catchments/land-cover/doc_jn_catchments_cecBuffers.parquet"
+)
 ## Archived paths
 old_GLAKES_filtered_fix_aqveg_dist_pth = Path(
     "/Volumes/metis/Datasets/Liu_aq_veg/figshare/original-private-repo/edk_out/GLAKES_filtered_fix_aqveg_dist.gpkg"
@@ -851,3 +859,7 @@ def load_harmonized_doc(NH=True) -> gpd.GeoDataFrame:
     assert len(duplicates) == 0, f"Found {len(duplicates)} duplicate sample_idx values"
 
     return result
+
+
+def load_ecoregions(pth="/Volumes/thebe/Other/EPA_ecoregions_N_America/na_cec_eco_l1.zip"):
+    return gpd.read_file(pth)

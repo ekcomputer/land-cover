@@ -11,13 +11,9 @@ import geopandas as gpd
 import numpy as np
 
 from land_cover.land_cover_in_buffers import extract_time_series_for_lakes
-from land_cover.load import (
-    cec_30m_lc_pth,
-    cec_30m_lc_rs250_pth,
-    doc_jn_catchment_pth,
-    plot_dir,
-    time_series_features_cec_doc_parquet_pth,
-)
+from land_cover.load import (cec_30m_lc_pth, cec_30m_lc_rs250_pth,
+                             doc_jn_catchment_pth, plot_dir,
+                             time_series_features_cec_doc_parquet_pth)
 
 # I/O
 
