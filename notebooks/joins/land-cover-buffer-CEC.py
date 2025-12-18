@@ -180,6 +180,7 @@ extract_time_series_for_lakes(
     years=years,
     # envelope_pth=above_lc_boreal_envelope_pth,
     join_index="sample_idx",
+    batch_size=500,
     n_workers=4,
     raster_path_coarse=cec_30m_lc_rs250_pth,
 )

@@ -7,6 +7,7 @@ around lakes across multiple years. It uses multiprocessing for efficiency and s
 incremental writing with resume capability.
 """
 
+import atexit
 import fcntl
 import gc
 import os
@@ -35,6 +36,30 @@ _YEARS = None
 _JOIN_INDEX = None
 _PARQUET_PATH = None
 _LARGE_LAKE_THRESHOLD = None
+_BATCH_SIZE = None
+_BATCH_BUFFER = []
+
+
+def _flush_batch():
+    """
+    Flush accumulated batch buffer to Parquet file.
+
+    Called when batch is full or at worker termination.
+    """
+    global _BATCH_BUFFER
+
+    if not _BATCH_BUFFER:
+        return
+
+    # Concatenate all DataFrames in buffer
+    batch_df = pd.concat(_BATCH_BUFFER, ignore_index=True)
+
+    # Write to file with locking
+    _append_to_parquet_locked(batch_df, _PARQUET_PATH)
+
+    # Clear buffer
+    _BATCH_BUFFER = []
+    gc.collect()
 
 
 def _init_worker(
@@ -44,6 +69,7 @@ def _init_worker(
     years: list,
     join_index: str,
     parquet_path: str,
+    batch_size: int,
     large_lake_threshold: float = 30e6,
     raster_path_coarse: Optional[str] = None,
 ):
@@ -66,12 +92,14 @@ def _init_worker(
         Column name for unique lake identifier
     parquet_path : str
         Output parquet file path
+    batch_size : int
+        Number of lakes to accumulate before writing to file
     large_lake_threshold : float, default=30e6
         Area threshold (m2) above which to use coarse raster if provided
     raster_path_coarse : str, optional
         Path to coarse-resolution raster for large lakes
     """
-    global _RASTER_DATASET, _RASTER_DATASET_COARSE, _RASTER_CRS, _BUFFER_LENGTHS, _CLASSES, _YEARS, _JOIN_INDEX, _PARQUET_PATH, _LARGE_LAKE_THRESHOLD
+    global _RASTER_DATASET, _RASTER_DATASET_COARSE, _RASTER_CRS, _BUFFER_LENGTHS, _CLASSES, _YEARS, _JOIN_INDEX, _PARQUET_PATH, _LARGE_LAKE_THRESHOLD, _BATCH_SIZE, _BATCH_BUFFER
 
     _RASTER_DATASET = rio.open(raster_path)
     _RASTER_CRS = _RASTER_DATASET.crs
@@ -81,6 +109,11 @@ def _init_worker(
     _JOIN_INDEX = join_index
     _PARQUET_PATH = parquet_path
     _LARGE_LAKE_THRESHOLD = large_lake_threshold
+    _BATCH_SIZE = batch_size
+    _BATCH_BUFFER = []
+
+    # Register cleanup handler to flush any remaining data on exit
+    atexit.register(_flush_batch)
 
     # Open coarse raster if provided
     if raster_path_coarse is not None:
@@ -331,12 +364,13 @@ def _process_lake(payload: dict) -> tuple:
         if result_df is None or result_df.empty:
             return payload[_JOIN_INDEX], 0
 
-        # Append to output file
-        _append_to_parquet_locked(result_df, _PARQUET_PATH)
+        # Add to batch buffer
+        global _BATCH_BUFFER
+        _BATCH_BUFFER.append(result_df)
 
-        # Clean up
-        del result_df
-        gc.collect()
+        # Flush if batch is full
+        if len(_BATCH_BUFFER) >= _BATCH_SIZE:
+            _flush_batch()
 
         return payload[_JOIN_INDEX], 1
 
@@ -388,6 +422,7 @@ def extract_time_series_for_lakes(
     envelope_shapefile: Optional[str] = None,
     raster_path_coarse: Optional[str] = None,
     large_lake_threshold: float = 30e6,
+    batch_size: int = 500,
     n_workers: int = 8,
 ) -> None:
     """
@@ -423,6 +458,10 @@ def extract_time_series_for_lakes(
     large_lake_threshold : float, default=30e6
         Area threshold (m2) above which to use coarse raster if provided
         (30e6 = 30 km²)
+    batch_size : int, default=500
+        Number of lake results to accumulate in memory before writing to
+        Parquet file. Larger values reduce I/O overhead but use more memory.
+        Recommended: 50-500 depending on available RAM.
     n_workers : int, default=8
         Number of parallel worker processes
     """
@@ -505,6 +544,7 @@ def extract_time_series_for_lakes(
         list(years),
         join_index,
         str(output_path),
+        batch_size,
         large_lake_threshold,
         raster_path_coarse,
     )
