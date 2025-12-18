@@ -1,21 +1,19 @@
-import geopandas as gpd
-import numpy as np
-import cartopy.crs as ccrs
-import cartopy.feature as cfeature
-from cartopy.io import img_tiles
-from matplotlib import pyplot as plt
-from matplotlib.colors import LogNorm
-import pandas as pd
-
-from pyproj.crs.crs import CRS
-import lonboard
 # from lonboard import PolygonLayer, ScatterplotLayer
 import warnings
-from IPython.display import display
-from matplotlib.colors import Normalize
+
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+import geopandas as gpd
+import lonboard
+import numpy as np
+import pandas as pd
 import seaborn as sns
-from scipy.stats import pearsonr, linregress
-from scipy.stats import f_oneway
+from cartopy.io import img_tiles
+from IPython.display import display
+from matplotlib import pyplot as plt
+from matplotlib.colors import LogNorm, Normalize
+from pyproj.crs.crs import CRS
+from scipy.stats import f_oneway, linregress, pearsonr
 from statannotations.Annotator import Annotator
 
 # from palettable.colorbrewer.diverging import PuOr_10_r
@@ -442,6 +440,7 @@ def plot_neon_in_situ_timeseries_pandas(
     plt.tight_layout()
     plt.show()
 
+
 ## for yvar in yvars: Barplot of df, with bars categorized by Total_inun_trend
 def boxplots_by_group(
     df,
@@ -455,6 +454,8 @@ def boxplots_by_group(
     order=["decreasing", "no trend", "increasing"],
     hue_order=None,
     anova=False,
+    legend_option="inside",
+    palette=None,
 ):
     """
     Create boxplots for each yvar grouped by `group_col`, with a subsampled stripplot overlay.
@@ -471,7 +472,7 @@ def boxplots_by_group(
     if anova:
         figsize = (figsize[0]-1, figsize[1]+2)
     fig, ax = plt.subplots(figsize=figsize)
-    sns.boxplot(data=df, x=group_col, y=yvar, showfliers=showfliers, whis=whis, ax=ax, order=order, hue=hue, hue_order=hue_order)
+    sns.boxplot(data=df, x=group_col, y=yvar, showfliers=showfliers, whis=whis, ax=ax, order=order, hue=hue, hue_order=hue_order, palette=palette)
 
     # Perform ANOVA and add significance annotations
     if anova is True and hue is None:
@@ -501,10 +502,15 @@ def boxplots_by_group(
             fontsize=10,
         )
     ax.set_title(f"{yvar} by {group_col} (outliers hidden)")
+
+    if legend_option == "outside" and hue is not None:
+        ax.legend(bbox_to_anchor=(0.3, -0.1), loc="upper right", ncol=2, title=hue)
+    elif legend_option == "inside" and hue is not None:
+        ax.legend(title=hue)
+    elif legend_option is None and hue is not None:
+        ax.get_legend().remove()
     plt.tight_layout()
 
-    if show:
-        plt.show()
 
 # testing
 if __name__== "__main__":
