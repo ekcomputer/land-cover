@@ -70,7 +70,7 @@ GLAKES_gswl_abz_filtered_pth = Path(
 bawld_join_gswl_abz_filtered_pth = Path(
     "/Volumes/metis/ABOVE3/other_outputs/BAWLD_GLAKES_gswl_filtered.gpkg"
 )
-doc_jn_catchment_pth = Path("/Volumes/metis/ABOVE3/Digitizing/catchments/doc_jn_catchments.gpkg")
+doc_jn_catchment_pth = Path("/Volumes/metis/ABOVE3/Digitizing/catchments/doc_jn_catchments_laea.gpkg")
 time_series_features_cec_doc_parquet_pth = (
     "/Volumes/metis/ABOVE3/Digitizing/catchments/land-cover/"
     + os.path.basename(doc_jn_catchment_pth).split(".")[0]
@@ -83,6 +83,7 @@ time_series_features_cec_doc_parquet_pth = (
 # _short_tsFeatures has just time-series features
 # *_tsFeatures adds lake database data from gswl, etc.
 
+# TODO update
 time_series_features_csv_pth = (
     "/Volumes/metis/ABOVE3/land_cover_joins/out/glakes_green_abovelc25/xlsx/"
     + os.path.basename(greennessx2_albers_pth).split(".")[0]

@@ -5,6 +5,8 @@ Extract land cover time series for lake buffer zones using parallel processing.
 This module provides functions to calculate land cover composition within buffer zones
 around lakes across multiple years. It uses multiprocessing for efficiency and supports
 incremental writing with resume capability.
+
+Updated from scratch for CEC dataset
 """
 
 import atexit
@@ -122,16 +124,14 @@ def _init_worker(
         _RASTER_DATASET_COARSE = None
 
 
-def _reconstruct_geodataframe(payload: dict, crs: CRS) -> gpd.GeoDataFrame:
+def _reconstruct_geodataframe(payload: dict) -> gpd.GeoDataFrame:
     """
     Reconstruct GeoDataFrame from serialized payload.
 
     Parameters
     ----------
     payload : dict
-        Dictionary containing geometry WKB and attributes
-    crs : CRS
-        Coordinate reference system
+        Dictionary containing geometry WKB, attributes, and CRS
 
     Returns
     -------
@@ -139,6 +139,7 @@ def _reconstruct_geodataframe(payload: dict, crs: CRS) -> gpd.GeoDataFrame:
         Single-row GeoDataFrame with lake geometry and attributes
     """
     geom = _wkb.loads(payload["geometry_wkb"])
+    crs = CRS.from_string(payload["lake_crs"])
 
     return gpd.GeoDataFrame(
         {
@@ -206,9 +207,9 @@ def extract_buffer_zonal_histogram(
     # Extract lake geometry (union if multiple)
     lake_geom = lake_gdf.geometry.iloc[0] if len(lake_gdf) == 1 else lake_gdf.unary_union
 
-    # Skip excessively large lakes
-    if lake_geom.area > max_area_m2:
-        return None
+    # # Skip excessively large lakes
+    # if lake_geom.area > max_area_m2:
+    #     return None
 
     # Ensure CRS matches
     assert raster_dataset.crs == lake_gdf.crs, "CRS mismatch between lake and raster"
@@ -222,8 +223,9 @@ def extract_buffer_zonal_histogram(
     buffer_lengths = list(buffer_lengths)
     sorted_indices = np.argsort(buffer_lengths)
     buffer_lengths_sorted = [buffer_lengths[i] for i in sorted_indices]
-    buffer_geoms = [lake_geom.buffer(length) for length in buffer_lengths_sorted]
-
+    buffer_geoms = [
+        lake_geom if length == 0 else lake_geom.buffer(length) for length in buffer_lengths_sorted
+    ]
     # Crop raster to outermost buffer extent
     try:
         # For now, skip overview usage as older rasterio versions don't support out_shape
@@ -341,8 +343,8 @@ def _process_lake(payload: dict) -> tuple:
         or error message string for failures
     """
     try:
-        # Reconstruct GeoDataFrame
-        lake_gdf = _reconstruct_geodataframe(payload, _RASTER_CRS)
+        # Reconstruct GeoDataFrame with stored CRS
+        lake_gdf = _reconstruct_geodataframe(payload)
 
         # Choose raster based on lake size
         lake_area = payload["Area_m2"]
@@ -485,6 +487,13 @@ def extract_time_series_for_lakes(
         print(f"Reprojecting lakes from {lakes_gdf.crs} to {raster_crs}")
         lakes_gdf = lakes_gdf.to_crs(raster_crs)
 
+    # Fix invalid geometries # TODO: precompute for GLAKES dataset
+    invalid_mask = ~lakes_gdf.geometry.is_valid
+    if invalid_mask.any():
+        n_invalid = invalid_mask.sum()
+        print(f"Fixing {n_invalid} invalid geometries...")
+        lakes_gdf.loc[invalid_mask, "geometry"] = lakes_gdf.loc[invalid_mask, "geometry"].buffer(0)
+
     # Set up join index
     if join_index is None:
         join_index = "join_idx"
@@ -530,6 +539,7 @@ def extract_time_series_for_lakes(
                 "Area_m2": float(row["Area_m2"]),
                 "Perim_m2": float(row["Perim_m2"]),
                 "geometry_wkb": row.geometry.wkb,
+                "lake_crs": str(lakes_gdf.crs),  # Store CRS to reconstruct with correct system
             }
         )
 
@@ -568,6 +578,6 @@ def extract_time_series_for_lakes(
                 print(f"[{join_index}={lake_id}] {status}")
 
     print(f"\nCompleted: {completed} lakes")
-    print(f"Skipped: {skipped} lakes (outside raster or too large)")
+    print(f"Skipped: {skipped} lakes (outside raster)")
     print(f"Errors: {errors} lakes")
     print(f"Output written to: {output_parquet}")
