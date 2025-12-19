@@ -75,7 +75,7 @@ bawld_join_gswl_abz_filtered_pth = Path(
 )
 doc_jn_catchment_pth = Path("/Volumes/metis/ABOVE3/Digitizing/catchments/doc_jn_catchments_laea.gpkg")
 
-# time_series_features_doc_parquet_pth =
+time_series_features_doc_parquet_pth = "/Volumes/metis/ABOVE3/Digitizing/catchments/land-cover/doc_jn_catchments_landCoverBuffers.parquet"
 time_series_features_cec_doc_parquet_pth = (
     "/Volumes/metis/ABOVE3/Digitizing/catchments/land-cover/"
     + os.path.basename(doc_jn_catchment_pth).split(".")[0]
