@@ -197,9 +197,9 @@ def extract_buffer_zonal_histogram(
 
     Returns
     -------
-    pd.DataFrame or None
+    pd.DataFrame
         DataFrame with columns for each class, plus Year, Buffer_m, Lake_name,
-        join_index, Area_m2, Perim_m2. Returns None if lake is too large or
+        join_index, Area_m2, Perim_m2. Returns empty DataFrame if lake
         doesn't overlap raster.
     """
     assert len(lake_gdf) >= 1, "lake_gdf must contain at least one geometry"
@@ -226,6 +226,23 @@ def extract_buffer_zonal_histogram(
     buffer_geoms = [
         lake_geom if length == 0 else lake_geom.buffer(length) for length in buffer_lengths_sorted
     ]
+    # Pre-compute dimensions for potential early returns
+    n_bands = len(years)
+    n_buffers = len(buffer_geoms)
+    n_classes = len(classes)
+
+    def _create_nan_dataframe():
+        """Helper to create DataFrame with NaN values when no data available."""
+        areas_ha = np.full((n_bands * n_buffers, n_classes), np.nan)
+        df = pd.DataFrame(areas_ha, columns=classes)
+        df["Year"] = np.repeat(years[:n_bands], n_buffers)
+        df["Buffer_m"] = np.tile(buffer_lengths_sorted, n_bands)
+        df["Lake_name"] = lake_gdf.index[0]
+        df[join_index] = lake_gdf[join_index].iloc[0] if join_index in lake_gdf else None
+        df["Area_m2"] = np.nan
+        df["Perim_m2"] = np.nan
+        return df
+
     # Crop raster to outermost buffer extent
     try:
         # For now, skip overview usage as older rasterio versions don't support out_shape
@@ -239,12 +256,10 @@ def extract_buffer_zonal_histogram(
         )
     except ValueError as e:
         if "do not overlap raster" in str(e).lower():
-            return None
+            return _create_nan_dataframe()
         raise
 
     n_bands, height, width = data.shape
-    n_buffers = len(buffer_geoms)
-    n_classes = len(classes)
 
     # Rasterize buffer zones with unique labels (1, 2, 3, ...)
     buffer_labels = rasterio.features.rasterize(
@@ -270,7 +285,7 @@ def extract_buffer_zonal_histogram(
             counts[band_idx] = bin_counts.reshape(n_buffers, n_classes)
         else:
             # No valid data in this band (lake outside raster coverage)
-            return None
+            return _create_nan_dataframe()
 
     # Convert pixel counts to area (hectares)
     pixel_area_ha = abs(raster_dataset.res[0] * raster_dataset.res[1]) / 10000.0
@@ -363,18 +378,20 @@ def _process_lake(payload: dict) -> tuple:
             join_index=_JOIN_INDEX,
         )
 
-        if result_df is None or result_df.empty:
-            return payload[_JOIN_INDEX], 0
-
-        # Add to batch buffer
+        # Add to batch buffer (only if contains actual data, not NaN)
         global _BATCH_BUFFER
         _BATCH_BUFFER.append(result_df)
-
+    
         # Flush if batch is full
         if len(_BATCH_BUFFER) >= _BATCH_SIZE:
             _flush_batch()
-
-        return payload[_JOIN_INDEX], 1
+            
+        # Check if any class columns contain non-NaN values
+        has_data = not np.isnan(result_df.Area_m2).all()
+        if has_data:
+            return payload[_JOIN_INDEX], 1
+        else:
+            return payload[_JOIN_INDEX], 0
 
     except Exception as e:
         return payload[_JOIN_INDEX], f"ERROR: {e}"
@@ -487,12 +504,12 @@ def extract_time_series_for_lakes(
         print(f"Reprojecting lakes from {lakes_gdf.crs} to {raster_crs}")
         lakes_gdf = lakes_gdf.to_crs(raster_crs)
 
-    # Fix invalid geometries # TODO: precompute for GLAKES dataset
-    invalid_mask = ~lakes_gdf.geometry.is_valid
-    if invalid_mask.any():
-        n_invalid = invalid_mask.sum()
-        print(f"Fixing {n_invalid} invalid geometries...")
-        lakes_gdf.loc[invalid_mask, "geometry"] = lakes_gdf.loc[invalid_mask, "geometry"].buffer(0)
+    # # Fix invalid geometries # TODO: precompute for GLAKES dataset
+    # invalid_mask = ~lakes_gdf.geometry.is_valid
+    # if invalid_mask.any():
+    #     n_invalid = invalid_mask.sum()
+    #     print(f"Fixing {n_invalid} invalid geometries...")
+    #     lakes_gdf.loc[invalid_mask, "geometry"] = lakes_gdf.loc[invalid_mask, "geometry"].buffer(0)
 
     # Set up join index
     if join_index is None:
@@ -576,6 +593,10 @@ def extract_time_series_for_lakes(
             else:
                 errors += 1
                 print(f"[{join_index}={lake_id}] {status}")
+
+
+    # Flush any remaining batch data
+    _flush_batch()
 
     print(f"\nCompleted: {completed} lakes")
     print(f"Skipped: {skipped} lakes (outside raster)")
