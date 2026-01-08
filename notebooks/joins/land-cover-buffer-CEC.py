@@ -1,5 +1,7 @@
-"""Run as Step L4b: after join_gswl_lakes.ipynb.
-Independent of notebooks/joins/regrid_to_bawld_and_plot.ipynb
+"""Version of lake buffers script for harmonized DOC dataset joined to lake catchments.
+
+Modified to use CEC land cover dataset instead of above boreal landcover.
+Uses re-write script called land_cover.land_cover_in_buffers.extract_time_series_for_lakes
 
 TODO:
 * Fix auto-loading if running on large dataset?

@@ -29,116 +29,26 @@ import pandas as pd
 import geopandas as gpd
 import rasterio as rio
 from rasterio.plot import reshape_as_image
-import rasterio.mask
 # from scipy.stats import binned_statistic
 from rasterstats import zonal_stats
 from scipy.stats.mstats import theilslopes
 import pymannkendall
 from tqdm import tqdm
-import pyproj
+import gc
+import fcntl
+from pathlib import Path
+from multiprocessing import get_context
+from shapely import wkb as _wkb
+from pyproj import CRS
 
 ## Params
 checkpoint_frequency = 1000
-
-## I/O
-
-## Switches (uncomment)
-# use_simplified_classes=True
-use_simplified_classes=False
-
-## in: for Bogard and ABove landcover v1
-pth_shp_in = '/Volumes/metis/ABOVE3/Tom/Selected_PLD_Lakes_2024-10-21/added_PLD/Efflux_Bogard_PLD_WBD.shp' # lake polygons
-pth_lc_in = '/Volumes/thebe/Wang-above-land-cover/ABoVE_LandCover_5km_buffer.vrt'
-pth_lc_in_simp = '/Volumes/thebe/Wang-above-land-cover/ABoVE_LandCover_simplified.vrt' # simplified 10-class landcover
-pth_csv_in = '/Volumes/thebe/ABoVE2021/Mapping/ABOVE_coordinates_for_Ethan_10-19-21_mod.csv' # native (edited) data format from Martin. Used to join in at end
-
-## out
-csv_out_pth = '/Volumes/metis/ABOVE3/land_cover_joins/out/xlsx/' + os.path.basename(pth_shp_in)[:-4] + '_landCoverBuffers.csv' # e.g. /Volumes/thebe/ABoVE2021/Mapping/out/xlsx/ABOVE_coordinates_for_Ethan_10-19-21_jn_PADLakesVis_landCoverBuffers.csv
-# shp_projected_out_pth = pth_shp_in.replace('_geom.shp', '_albers_geom.shp')
-plot_dir = '/Volumes/metis/ABOVE3/land_cover_joins/plots'
-
-## buffers, in order small -> large
-buffer_lengths = [180] # (90, 180) # in m # 90, 990 # 1350
-
-# classes for land cover
-classes =       ['Evergreen Forest','Deciduous Forest',	'Mixed Forest',	'Woodland',	'Low Shrub',	'Tall Shrub',	'Open Shrubs',	'Herbaceous',	'Tussock Tundra',	'Sparsely Vegetated',	'Fen',	'Bog',	'Shallows/littoral',	'Barren',	'Water']
-classes_dry =   ['Evergreen Forest','Deciduous Forest',	'Mixed Forest',	'Woodland',	'Low Shrub',	'Tall Shrub',	'Open Shrubs',	'Herbaceous',	'Tussock Tundra',	'Sparsely Vegetated',	'Fen',	'Bog',	'Barren']
-classes_dry_rn = [item.replace(' ','_').replace('/','_') for item in classes_dry] # rename var too
-classes_wet =   ['Shallows/littoral', 'Water']
-classes_simp = ['Evergreen Forest','Deciduous Forest',	'Shrubland', 'Herbaceous',	'Sparsely Vegetated',	'Barren',	'Fen',	'Bog',	'Shallows/littoral', 'Water']
-years = np.arange(1984, 2014+1)
-
-ds_specific_vars = [ # For Martin OG dataset
-    'latitude',
-    'longitude',
-    'Location',	
-]
-
-# ds_specific_vars = [ # For Efflux lakes
-#     'Lat_DD',
-#     'Lon_DD',
-#     'AvgOfTempC',
-#     'AvgOfpH',
-#     'AvgOfALKum',
-#     'AvgOfpCO2',
-#     'StDevOfpCO',
-# ]
-
-ds_specific_vars = [ # For Efflux and Bogard lakes
-    'Lat_DD',
-    'Lon_DD',	
-    'AvgOfTempC',
-    'AvgOfpH',
-    'AvgOfALKum',
-    'AvgOfpCO2',
-    'StDevOfpCO',
-    'Name',
-    'Reference',
-    # 'SIMILAR',
-    'mean_bound', # mean_bound_dist
-    'max_bound_',
-]
-
-important_vars = [ # for 
-				
-        'Area_m2',
-        'Perim_m2',
-        'Total_inun_2014',
-        'Trees_pct_2014',		
-        'Shrubs_pct_2014',				
-        'Wetlands_pct_2014',				
-        'Graminoid_pct_2014',				
-        'Sparse_pct_2014',
-        'Littorals_pct_2014',
-        'Littoral_wetland_pct_2014',
-        'Total_inun_RSD',				
-        'Total_inun_dyn_pct',			
-        'Hi_water_yr',					
-        'Lo_water_yr',					
-        'Dominant_veg_2014',
-        'Dominant_veg_group_2014',
-        'SDF',	
-        'Perim_area_ratio',						
-        'Total_inun_change',			
-        'Total_inun_trend'
-    ]
-
-## dynamic values
-if use_simplified_classes:
-    pth_lc_in = pth_lc_in_simp
-    classes = classes_simp
-    csv_out_pth = csv_out_pth.replace('.csv', '_simpl_classes.csv')
-
-xlsx_out_norm_pth = csv_out_pth.replace('.csv', '_norm.csv') # e.g. /Volumes/thebe/ABoVE2021/Mapping/out/xlsx/ABOVE_coordinates_for_Ethan_10-19-21_jn_PADLakesVis_landCoverBuffers_norm.csv
-xlsx_out_time_series_features_pth = csv_out_pth.replace('.csv', '_tsFeatures.csv') # e.g. /Volumes/thebe/ABoVE2021/Mapping/out/xlsx/ABOVE_coordinates_for_Ethan_10-19-21_jn_PADLakesVis_landCoverBuffers_tsFeatures.csv
-xlsx_out_time_series_features_core_pth = xlsx_out_time_series_features_pth.replace('_tsFeatures.csv', '_core_tsFeatures.csv')
-csv_out_time_series_features_short_pth = xlsx_out_time_series_features_pth.replace("_tsFeatures", "_short_tsFeatures")
-shp_out_time_series_features_core_pth = xlsx_out_time_series_features_core_pth.replace('xlsx', 'shp')
-
+FLOAT_FORMAT_LONG = "%.5f" # csv digits (to save storage space) for time series features
+FLOAT_FORMAT_SHORT = "%.3f" # csv digits for normalized features
 
 ## Function
 def extractBufferZonalHist(
-    poly, buffer_lengths, pth_lc_in, classes=classes, years=years, nodata=255, all_touched=False, join_index="join_idx"
+    poly, buffer_lengths, pth_lc_in, classes, years, nodata=255, all_touched=False, join_index="join_idx"
 ):
     """
     Zonal histogram for many buffers x all bands (years) in looped pass.
@@ -213,17 +123,6 @@ def extractBufferZonalHist(
 
 
 # multiprocessing + POSIX file lock (fcntl) version with resume + append
-import os
-import gc
-import fcntl
-from pathlib import Path
-from multiprocessing import get_context
-import pandas as pd
-import geopandas as gpd
-import rasterio as rio
-from shapely import wkb as _wkb
-from pyproj import CRS
-
 # ---------- worker globals (set by initializer) ----------
 _CSV_PATH = None
 _RASTER_CRS = None
@@ -268,7 +167,7 @@ def _append_df_csv_locked(df: pd.DataFrame, csv_path: str):
     with open(csv_path, "a+", newline="") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         need_header = f.tell() == 0  # at end because "a+" opens and seeks to end
-        df.to_csv(f, index=False, header=need_header, float_format='%.3f')
+        df.to_csv(f, index=False, header=need_header, float_format=FLOAT_FORMAT_LONG)
         f.flush()
         os.fsync(f.fileno())
         fcntl.flock(f, fcntl.LOCK_UN)
@@ -308,10 +207,10 @@ def extractTimeSeriesForLakes(
     pth_shp_in,
     buffer_lengths,
     csv_out_pth,
-    pth_lc_in=pth_lc_in,
-    use_simplified_classes=False,
-    classes=classes,
-    years=years,
+    pth_lc_in,
+    use_simplified_classes,
+    classes,
+    years,
     envelope_pth=None,
     join_index=None,
     n_workers=8,
@@ -387,13 +286,6 @@ def extractTimeSeriesForLakes(
     chunksize = max(1, len(payloads) // (n_workers * 8) or 1)
 
     # Progress
-    try:
-        from tqdm import tqdm
-
-        use_tqdm = True
-    except Exception:
-        use_tqdm = False
-
     initargs = (
         str(out_path),
         raster_crs.to_wkt(),
@@ -406,8 +298,7 @@ def extractTimeSeriesForLakes(
 
     with ctx.Pool(processes=n_workers, initializer=_init_worker, initargs=initargs) as pool:
         iterator = pool.imap_unordered(_worker, payloads, chunksize=chunksize)
-        if use_tqdm:
-            iterator = tqdm(iterator, total=len(payloads), desc="Lakes")
+        iterator = tqdm(iterator, total=len(payloads), desc="Lakes")
         completed = 0
         errors = 0
         for join_idx, status in iterator:
@@ -428,9 +319,9 @@ def extractTimeSeriesForLakes(
 def normalizeTimeSeries(
     xlsx_out_pth,
     xlsx_out_norm_pth,
-    classes_wet=classes_wet,
-    classes_dry=classes_dry,
-    classes_dry_rn=classes_dry_rn,
+    classes_wet,
+    classes_dry,
+    classes_dry_rn,
     use_simplified_classes=False,
     wetland_class='Shallows/littoral',
 ):
@@ -472,15 +363,15 @@ def normalizeTimeSeries(
         df[var + '_pct'] = df[var] / df.loc[:,classes_dry_rn].sum(axis=1)*100
 
     ## Write out
-    df.to_csv(xlsx_out_norm_pth, float_format="%.3f")
+    df.to_csv(xlsx_out_norm_pth, float_format=FLOAT_FORMAT_SHORT)
     print(f'Wrote normalized output table: {xlsx_out_norm_pth}')
 
 
 def normalizeTimeSeries_above_boreal(
     xlsx_out_pth,
     xlsx_out_norm_pth,
-    classes_wet=classes_wet,
-    classes_dry=classes_dry,
+    classes_wet,
+    classes_dry,
     wetland_class="Wetland",
     index_class="Lake_id_glakes",
 ):
@@ -517,12 +408,12 @@ def normalizeTimeSeries_above_boreal(
 
     ## Write out
     # write with 3 decimal places
-    df.to_csv(xlsx_out_norm_pth, float_format='%.3f')
+    df.to_csv(xlsx_out_norm_pth, float_format=FLOAT_FORMAT_SHORT)
     print(f"Wrote normalized output table: {xlsx_out_norm_pth}")
 
 
 def plotTimeSeries(
-    buffer_lengths=buffer_lengths, xlsx_out_norm_pth=xlsx_out_norm_pth, plot_dir=plot_dir
+    buffer_lengths, xlsx_out_norm_pth, plot_dir
 ):
     '''
     Loads 'xlsx_out_norm_pth', manipulates data, and creates a multi-facted time-series plot for each lake from the ABoVE landcover dataset, plotting in ha, not normalized, by default. Saves plots to 'plot_dir'
@@ -572,14 +463,15 @@ def plotTimeSeries(
 
 
 def extractTimeSeriesFeatures(
-    xlsx_out_norm_pth=xlsx_out_norm_pth,
-    years=years,
-    classes_dry_rn=classes_dry_rn,
-    pth_shp_in=pth_shp_in,
-    ds_specific_vars=ds_specific_vars,
-    csv_out_time_series_features_pth=xlsx_out_time_series_features_pth,
-    important_vars=important_vars,
-    csv_out_time_series_features_core_pth=xlsx_out_time_series_features_core_pth,
+    xlsx_out_norm_pth,
+    years,
+    classes_dry_rn,
+    pth_shp_in,
+    ds_specific_vars,
+    csv_out_time_series_features_pth,
+    important_vars,
+    csv_out_time_series_features_core_pth,
+    shp_out_time_series_features_core_pth,
     join_index="join_idx",
 ):
     '''
@@ -657,11 +549,11 @@ def extractTimeSeriesFeatures(
     [stats.insert(0, col, stats.pop(col)) for col in joined_cols[-1::-1]] # re-order cols # TODO import load.sortColumns
 
     ## Write out
-    stats.to_csv(csv_out_time_series_features_pth, float_format='%.3f')
+    stats.to_csv(csv_out_time_series_features_pth, float_format=FLOAT_FORMAT_LONG)
     print(f'Wrote time series output table: {csv_out_time_series_features_pth}')
 
     ## Save and write out most important stats
-    stats.loc[:, ds_specific_vars + important_vars].to_csv(csv_out_time_series_features_core_pth, float_format='%.3f')
+    stats.loc[:, ds_specific_vars + important_vars].to_csv(csv_out_time_series_features_core_pth, float_format=FLOAT_FORMAT_LONG)
     print(f'Wrote time series output table (greatest hits): {csv_out_time_series_features_core_pth}')
 
     ## Save shapefile
@@ -672,15 +564,15 @@ def extractTimeSeriesFeatures(
 
 
 def extractTimeSeriesFeatures_above_boreal(
-    xlsx_out_norm_pth=xlsx_out_norm_pth,
-    years=years,
-    classes_dry_rn=classes_dry_rn,
-    pth_shp_in=pth_shp_in,
-    ds_specific_vars=ds_specific_vars,
-    csv_out_time_series_features_pth=xlsx_out_time_series_features_pth,
-    important_vars=important_vars,
-    csv_out_time_series_features_core_pth=xlsx_out_time_series_features_core_pth,
-    csv_out_time_series_features_short_pth=csv_out_time_series_features_short_pth,
+    xlsx_out_norm_pth,
+    years,
+    classes_dry_rn,
+    pth_shp_in,
+    ds_specific_vars,
+    csv_out_time_series_features_pth,
+    important_vars,
+    csv_out_time_series_features_core_pth,
+    csv_out_time_series_features_short_pth,
     join_index="Lake_id_glakes",
     grouped_classes=["Trees", "Shrub", "Wetland", "Herb", "Sparse"],
 ):
@@ -815,7 +707,7 @@ def extractTimeSeriesFeatures_above_boreal(
     ## Save short version # not joined with rest of dataset
     stats.to_csv(
         csv_out_time_series_features_short_pth,
-        float_format="%.3f",
+        float_format=FLOAT_FORMAT_LONG,
     )
     print(f"Wrote short time series output table: {csv_out_time_series_features_short_pth}")
 
@@ -860,11 +752,3 @@ def extractTimeSeriesFeatures_above_boreal(
     # )
 
     pass
-
-
-if __name__ == '__main__':
-    '''Run join_WBD.ipynb first'''
-    # extractTimeSeriesForLakes(pth_shp_in, buffer_lengths, csv_out_pth)
-    # normalizeTimeSeries(csv_out_pth, csv_out_norm_pth, classes_wet, classes_dry)
-    # plotTimeSeries()
-    extractTimeSeriesFeatures()
