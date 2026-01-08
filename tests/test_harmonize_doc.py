@@ -83,9 +83,9 @@ class TestHarmonizeDocDataset:
         )
 
         # Check optional columns are present
-        assert "area" in result.columns
+        assert "area_km2" in result.columns
         assert "dic" in result.columns
-        assert result.loc[0, "area"] == 100.0
+        assert result.loc[0, "area_km2"] == 100.0
         assert result.loc[1, "dic"] == 6.0
 
     def test_harmonize_without_optional_fields(self):
