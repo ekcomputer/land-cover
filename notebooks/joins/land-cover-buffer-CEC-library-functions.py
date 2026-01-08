@@ -3,7 +3,7 @@
 Modified to use CEC land cover dataset instead of above boreal landcover.
 Uses re-write script called land_cover.land_cover_in_buffers.extract_time_series_for_lakes
 
-Still doesn't work with parquet...
+Un-rewrite so that it uses my current library functions in land_cover/land_cover_change_buffer_from_csv.py
 TODO:
 * Fix auto-loading if running on large dataset?
 """
@@ -13,17 +13,16 @@ import os
 import geopandas as gpd
 import numpy as np
 
-from land_cover.land_cover_in_buffers import extract_time_series_for_lakes
+from land_cover.land_cover_change_buffer_from_csv import extractTimeSeriesForLakes
 from land_cover.load import (cec_30m_lc_pth, cec_30m_lc_rs250_pth,
                              doc_jn_catchment_pth, plot_dir,
-                             time_series_features_cec_doc_parquet_pth)
+                             time_series_features_cec_doc_csv_pth)
 
 # I/O
 
 ## in: for greennessx2 and Land Cover v2
 
 ## out
-parquet_out_pth = time_series_features_cec_doc_parquet_pth
 plot_dir = os.path.join(plot_dir, "doc_harm_cec")
 
 ## buffers, in order small -> large
@@ -152,16 +151,16 @@ important_vars = [
 ## dynamic values
 classes_dry_rn = [item.replace(" ", "_").replace("/", "_") for item in classes_dry]
 
-parquet_out_norm_pth = parquet_out_pth.replace(
-    ".parquet", "_norm.parquet"
+parquet_out_norm_pth = time_series_features_cec_doc_csv_pth.replace(
+    ".csv", "_norm.parquet"
 )  # e.g. /Volumes/thebe/ABoVE2021/Mapping/out/xlsx/ABOVE_coordinates_for_Ethan_10-19-21_jn_PADLakesVis_landCoverBuffers_norm.csv
-parquet_out_time_series_features_pth = parquet_out_pth.replace(
+parquet_out_time_series_features_pth = time_series_features_cec_doc_csv_pth.replace(
     ".parquet", "_tsFeatures.parquet"
 )  # e.g. /Volumes/thebe/ABoVE2021/Mapping/out/xlsx/ABOVE_coordinates_for_Ethan_10-19-21_jn_PADLakesVis_landCoverBuffers_tsFeatures.csv
-parquet_out_time_series_features_core_pth = parquet_out_pth.replace(
+parquet_out_time_series_features_core_pth = time_series_features_cec_doc_csv_pth.replace(
     ".parquet", "_core_tsFeatures.parquet"
 )
-parquet_out_time_series_features_short_pth = parquet_out_pth.replace(
+parquet_out_time_series_features_short_pth = time_series_features_cec_doc_csv_pth.replace(
     ".parquet", "_short_tsFeatures.parquet"
 )
 shp_out_time_series_features_core_pth = parquet_out_time_series_features_core_pth.replace(
@@ -170,11 +169,12 @@ shp_out_time_series_features_core_pth = parquet_out_time_series_features_core_pt
 
 ## RUN for preliminary harmonized DOC with no buffers
 
-extract_time_series_for_lakes(
+extractTimeSeriesForLakes(
     doc_jn_catchment_pth,
-    cec_30m_lc_pth,
-    parquet_out_pth,
     buffer_lengths,
+    time_series_features_cec_doc_csv_pth,
+    cec_30m_lc_pth,
+    use_simplified_classes=False,
     classes=classes,
     years=years,
     # envelope_pth=above_lc_boreal_envelope_pth,

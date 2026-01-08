@@ -214,6 +214,7 @@ def extractTimeSeriesForLakes(
     envelope_pth=None,
     join_index=None,
     n_workers=8,
+    pth_lc_in_coarse=None,
 ):
     print("Paths:")
     print(csv_out_pth)
@@ -408,7 +409,10 @@ def normalizeTimeSeries_above_boreal(
 
     ## Write out
     # write with 3 decimal places
-    df.to_csv(xlsx_out_norm_pth, float_format=FLOAT_FORMAT_SHORT)
+    if xlsx_out_norm_pth.endswith('.parquet'):
+        df.to_parquet(xlsx_out_norm_pth, index=False)
+    else:
+        df.to_csv(xlsx_out_norm_pth, float_format=FLOAT_FORMAT_SHORT)
     print(f"Wrote normalized output table: {xlsx_out_norm_pth}")
 
 
