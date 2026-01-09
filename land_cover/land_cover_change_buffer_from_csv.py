@@ -416,19 +416,54 @@ def normalizeTimeSeries_above_boreal(
     print(f"Wrote normalized output table: {xlsx_out_norm_pth}")
 
 
-def plotTimeSeries(
-    buffer_lengths, xlsx_out_norm_pth, plot_dir
-):
-    '''
+def plotTimeSeries(buffer_lengths, xlsx_out_norm_pth, plot_dir, index_col=None, index=None, combined=False):
+    """
     Loads 'xlsx_out_norm_pth', manipulates data, and creates a multi-facted time-series plot for each lake from the ABoVE landcover dataset, plotting in ha, not normalized, by default. Saves plots to 'plot_dir'
-    '''
+    If index_col is provided, only plots indexes in `index`
+    If combined == True, plots all lakes in one figure, using area-weighted means across lakes.
+    """
     ## vars
     buf_len = buffer_lengths[0] # use the smallest (90 m) buffer for plotting
 
     ## Load
     print('Plotting land cover...')
-    df = pd.read_csv(xlsx_out_norm_pth, index_col=0)
-    dfg = df.groupby('Lake_name') # ['Lake_name', 
+    if xlsx_out_norm_pth.endswith(".parquet"):
+        df = pd.read_parquet(xlsx_out_norm_pth)
+    elif xlsx_out_norm_pth.endswith(".csv"):
+        df = pd.read_csv(xlsx_out_norm_pth, index_col=0)
+    else:
+        raise ValueError("Unsupported file format for xlsx_out_norm_pth")
+
+    if "Buffer_m" not in df.columns:
+        df["Buffer_m"] = buffer_lengths[0]  # assume single buffer if missing
+
+    if index_col is not None and index is not None:
+        dfg = df[df[index_col].isin(index)].groupby(index_col)
+    else:
+        dfg = df.groupby(index_col)
+
+    if combined:
+        # Group by Year and calculate area-weighted means across all lakes
+        df_combined = (
+            df.groupby('Year')
+            .apply(lambda group: pd.Series({
+                col: np.average(group[col], weights=group['Area_m2']) 
+                if col not in ['Year', 'Buffer_m', 'Lake_name', index_col, 'Area_m2', 'Perim_m2'] and group[col].notna().any()
+                else group[col].iloc[0] if col in ['Year', 'Buffer_m'] 
+                else group[col].sum() if col in ['Area_m2', 'Perim_m2']
+                else 'Aggregated'
+                for col in df.columns
+            }))
+            .reset_index(drop=True)
+        )
+
+        # Set aggregation identifier
+        df_combined['agg_group'] = 'Aggregated'
+
+        # Create single-group iterator for plotting
+        dfg = df_combined.groupby("agg_group")
+    else:
+        pass
     # group = dfg.get_group('Balloon lake') # formerly ('Balloon lake', buf_len)
 
     ## Plot with mpl
@@ -445,12 +480,18 @@ def plotTimeSeries(
     # g.savefig(os.path.join(plot_dir, 'time-series-facets-1.png'))
 
     ## Plot for all lakes!
+    ## Note: OG slices were 1-16, 21-36, 42-47
+
     plot_types = { # dict for plotting params
         'Ha': {'slice': slice(1,16), 'col_wrap': 4, 'subdir':'time-series-by-lake'},
         'Normalized area (%)': {'slice': slice(21,36), 'col_wrap': 4, 'subdir':'time-series-by-lake-norm'},
-        'Norm. land group area (%)': {'slice': slice(42, 47), 'col_wrap': 2, 'subdir':'time-series-by-lake-grouped-norm'} # NOTE: columns 34-40 are non-normalized groups
+        'Norm. land group area (%)': {'slice': slice(13,22), 'col_wrap': 2, 'subdir':'time-series-by-lake-grouped-norm'} # NOTE: columns 34-40 are non-normalized groups
         }
     for type in ['Norm. land group area (%)']: #plot_types: # HERE: Switch to modify which type of plot to use or use full dict
+        os.makedirs(os.path.join(
+                    plot_dir,
+                    plot_types[type]["subdir"],
+                ), exist_ok=True)
         for lake in dfg.groups:
             group = dfg.get_group(lake)
             dfl = pd.melt(group, id_vars=['Year', 'Buffer_m'], value_vars=df.columns[plot_types[type]['slice']], var_name = 'Class', value_name=type)# data frame long format
@@ -461,7 +502,13 @@ def plotTimeSeries(
             g.fig.suptitle(f'{lake} ({group.Area_m2.mode()[0]/1e6:.2f} $km^2$)') # used mode, but mean, first, med would give same answer
             # plt.show()
             plt.close()
-            g.savefig(os.path.join(plot_dir, plot_types[type]['subdir'], f'time-series-facets-{lake}.png').replace(' ','-'))
+            g.savefig(
+                os.path.join(
+                    plot_dir,
+                    plot_types[type]["subdir"],
+                    f"ts-facets-{index_col}-{lake}.png",
+                ).replace(" ", "-")
+            )
             print(lake)
     print('Done plotting.')
 

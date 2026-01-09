@@ -40,6 +40,7 @@ pth_lc_in = above_lc_boreal_pth
 ## out
 csv_out_pth = time_series_features_csv_pth
 plot_dir = os.path.join(plot_dir, "glakes_green_abovelc25")
+os.makedirs(plot_dir, exist_ok=True)
 
 ## buffers, in order small -> large
 buffer_lengths = [180]  # (90, 180) # in m # 90, 990 # 1350
@@ -276,19 +277,29 @@ shp_out_time_series_features_core_pth = csv_out_time_series_features_core_pth.re
 #     csv_out_pth, csv_out_norm_pth, classes_wet, classes_dry, wetland_class="Wetland"
 # )
 
-# plotTimeSeries(buffer_lengths, csv_out_norm_pth, plot_dir)
+plotTimeSeries(buffer_lengths, csv_out_norm_pth, plot_dir, index_col="Lake_id_glakes",
+            #    index=[160937, 219366, 8280],
+            index=[
+                2404932,
+                2026800,
+                853760,
+                829529,
+                518392,
+                423759,
+            ],
+            combined=False)
 
-extractTimeSeriesFeatures_above_boreal(
-    csv_out_norm_pth,
-    years,
-    classes_dry_rn,
-    pth_shp_in,
-    ds_specific_vars,
-    csv_out_time_series_features_pth,
-    important_vars,
-    csv_out_time_series_features_core_pth,
-    csv_out_time_series_features_short_pth,
-    join_index="Lake_id_glakes",
-    grouped_classes=["Trees", "Shrub", "Wetland", "Herb", "Sparse"],
-)
+# extractTimeSeriesFeatures_above_boreal(
+#     csv_out_norm_pth,
+#     years,
+#     classes_dry_rn,
+#     pth_shp_in,
+#     ds_specific_vars,
+#     csv_out_time_series_features_pth,
+#     important_vars,
+#     csv_out_time_series_features_core_pth,
+#     csv_out_time_series_features_short_pth,
+#     join_index="Lake_id_glakes",
+#     grouped_classes=["Trees", "Shrub", "Wetland", "Herb", "Sparse"],
+# )
 print("DONE.")
