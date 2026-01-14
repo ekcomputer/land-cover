@@ -333,9 +333,7 @@ def extractTimeSeriesForLakes(
         print(f"Filtered polygons by envelope: {len(polys)} features")
 
     out_path = Path(csv_out_pth)
-    _prime_header(
-        out_path, classes, ("Year", "Buffer_m", "Lake_name", join_index, "Area_m2", "Perim_m2")
-    )
+    
 
     # Resume support: read already processed Join_idx
     done_idx = set() # e.g. {}
@@ -345,6 +343,10 @@ def extractTimeSeriesForLakes(
             done_col = pd.read_csv(out_path, usecols=[join_index])[join_index]
             done_idx = set(done_col.dropna().unique().tolist())
             print(f"Resuming: found {len(done_idx)} completed lakes in existing CSV.")
+        else:
+            _prime_header(
+        out_path, classes, ("Year", "Buffer_m", "Lake_name", join_index, "Area_m2", "Perim_m2")
+    )
     except Exception as e:
         print(f"Resume read failed ({e}); proceeding without resume filtering.")
 
