@@ -434,6 +434,10 @@ def plotTimeSeries(buffer_lengths, xlsx_out_norm_pth, plot_dir, index_col=None, 
     else:
         raise ValueError("Unsupported file format for xlsx_out_norm_pth")
 
+    if index_col is not None:
+        assert index_col in df.columns, f"Column '{index_col}' not found in DataFrame. Available columns: {df.columns.tolist()}"
+        assert set(index).issubset(set(df[index_col].unique())), f"Some values in index are not found in {index_col} column"
+        
     if "Buffer_m" not in df.columns:
         df["Buffer_m"] = buffer_lengths[0]  # assume single buffer if missing
 

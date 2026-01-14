@@ -280,12 +280,17 @@ shp_out_time_series_features_core_pth = csv_out_time_series_features_core_pth.re
 plotTimeSeries(buffer_lengths, csv_out_norm_pth, plot_dir, index_col="Lake_id_glakes",
             #    index=[160937, 219366, 8280],
             index=[
-                2404932,
-                2026800,
-                853760,
-                829529,
-                518392,
-                423759,
+
+                ## ELA 
+                # 2404932,
+                # 2026800,
+                # 853760,
+                # 829529,
+                # 518392,
+                # 423759,
+
+                ## Toolik
+                147433
             ],
             combined=False)
 
