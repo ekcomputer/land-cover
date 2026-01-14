@@ -19,7 +19,6 @@ TODO:
 * Fix functionality so that multiple buffers can be run at once.
 * Remove "Lake_name" field
 
-2025 problems:
 """
 
 import fcntl
@@ -42,7 +41,6 @@ from shapely import wkb as _wkb
 from tqdm import tqdm
 
 ## Params
-checkpoint_frequency = 1000
 FLOAT_FORMAT_LONG = "%.5f" # csv digits (to save storage space) for time series features
 FLOAT_FORMAT_SHORT = "%.3f" # csv digits for normalized features
 

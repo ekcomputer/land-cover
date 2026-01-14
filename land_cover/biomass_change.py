@@ -136,17 +136,15 @@ def extractBufferZonalStats(
     means = np.empty((n_bands, n_buffers), dtype=np.float32)
     stds = np.empty((n_bands, n_buffers), dtype=np.float32)
 
-    for bi in range(n_bands):
-        vals = data[bi]
-        for buf_id in range(1, n_buffers + 1):
-            mask = (labels == buf_id) & (vals != nodata)
-            if mask.any():
-                buf_vals = vals[mask].astype(np.float32)
-                means[bi, buf_id - 1] = np.nanmean(buf_vals)
-                stds[bi, buf_id - 1] = np.nanstd(buf_vals)
-            else:
-                means[bi, buf_id - 1] = np.nan
-                stds[bi, buf_id - 1] = np.nan
+    for buf_id in range(1, n_buffers + 1):
+        mask = (labels == buf_id) & (data != nodata)
+        if mask.any():
+            buf_vals = data[mask].astype(np.float32)
+            means[:, buf_id - 1] = np.nanmean(buf_vals.reshape(n_bands, -1), axis=1)
+            stds[:, buf_id - 1] = np.nanstd(buf_vals.reshape(n_bands, -1), axis=1)
+        else:
+            means[:, buf_id - 1] = np.nan
+            stds[:, buf_id - 1] = np.nan
 
     means /= SCALE_FACTOR
     stds /= SCALE_FACTOR
