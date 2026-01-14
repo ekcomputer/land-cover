@@ -65,6 +65,11 @@ above_lc_boreal_envelope_pth = "/Volumes/metis/Datasets/Hu_Wang_ABOVE_landcover_
 cec_30m_lc_pth = "/Volumes/metis/ABOVE3/cec-land-cover/land_cover_2010v3_30m_tif/NA_NALCMS_landcover_2010v3_30m/data/NA_NALCMS_landcover_2010v3_30m.tif"
 cec_30m_lc_rs250_pth = "/Volumes/metis/ABOVE3/cec-land-cover/land_cover_2010v3_30m_tif/NA_NALCMS_landcover_2010v3_30m/data/edk_out/NA_NALCMS_landcover_2010v3_250m.tif"
 
+
+## Biomas
+biomass_30m_pth = "/Volumes/metis/ABOVE3/Liang26_AGB/ABoVE_AGB.vrt"
+biomass_300m_pth = "/Volumes/metis/ABOVE3/Liang26_AGB/Res300m/ABoVE_AGB.vrt"
+
 ## Working paths
 # filtered based on some criteria
 GLAKES_gswl_abz_filtered_pth = Path(
@@ -87,6 +92,12 @@ time_series_features_cec_doc_csv_pth = (
     "/Volumes/metis/ABOVE3/Digitizing/catchments/land-cover/"
     + os.path.basename(doc_jn_catchment_pth).split(".")[0]
     + "_cecBuffers.csv"
+)
+
+time_series_features_agb_doc_csv_pth = (
+    "/Volumes/metis/ABOVE3/Digitizing/catchments/biomass/"
+    + os.path.basename(doc_jn_catchment_pth).split(".")[0]
+    + "_agbBuffers.csv"
 )
 
 # Land cover time features
