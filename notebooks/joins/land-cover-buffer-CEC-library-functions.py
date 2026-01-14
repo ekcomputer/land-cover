@@ -176,23 +176,5 @@ extractTimeSeriesForLakes(
     n_workers=8,
     pth_lc_in_coarse=cec_30m_lc_rs250_pth,
 )
-# normalizeTimeSeries_above_boreal(
-#     parquet_out_pth, parquet_out_norm_pth, classes_wet, classes_dry, wetland_class="Wetland", index_class="sample_idx"
-# )
 
-# # plotTimeSeries(buffer_lengths, parquet_out_norm_pth, plot_dir)
-
-# extractTimeSeriesFeatures_above_boreal(
-#     parquet_out_norm_pth,
-#     years,
-#     classes_dry_rn,
-#     pth_shp_in,
-#     ds_specific_vars,
-#     parquet_out_time_series_features_pth,
-#     important_vars,
-#     parquet_out_time_series_features_core_pth,
-#     parquet_out_time_series_features_short_pth,
-#     join_index="sample_idx",
-#     grouped_classes=["Trees", "Shrub", "Wetland", "Herb", "Sparse"],
-# )
 print("DONE.")

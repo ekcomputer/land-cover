@@ -6,7 +6,7 @@ Summary
 For calculating land cover and its change within polygons representing outwards buffers from lakes.
 Can optionally join in all attributes from original lake dataset.
 With optimizations like pre-loading raster datasets, memory management, and using a coarsened raster
-for large catchments: runs at 60 it/sec.
+for large catchments: runs at 60 it/sec for a one-band CEC raster.
 
 Write three outputs:
 1. All input variables for lakes that were matched to land cover
@@ -15,10 +15,9 @@ Write three outputs:
 
 TODO:
 * Check that water normalization only refers to largest/central lake within buffer.
-* Add watershed buffer x
 * IMPORTANT: Find a way to automatically include Lat/Long and any note columns in final spreadsheet (perhaps join in?) Right now, I'm just using a quick fix in Excel.
-* Remove shortcut hack to skip large lakes -> eventually resample coarsen landcover to use for large lakes
-* Remove hacks for numeric types if running on GLAKES again
+* Fix functionality so that multiple buffers can be run at once.
+* Remove "Lake_name" field
 
 2025 problems:
 """
@@ -50,22 +49,52 @@ FLOAT_FORMAT_SHORT = "%.3f" # csv digits for normalized features
 
 ## Function
 def extractBufferZonalHist(
-    poly,
-    buffer_lengths,
+    poly: gpd.GeoDataFrame,
+    buffer_lengths: list,
     raster_dataset,
-    classes,
-    years,
-    nodata=255,
-    all_touched=False,
-    join_index="join_idx",
-    large_lake_threshold=30e6,
+    classes: list[str],
+    years: list[int],
+    nodata: int = 255,
+    all_touched: bool = False,
+    join_index: str = "join_idx",
+    large_lake_threshold: float = 30e6,
     raster_dataset_coarse=None,
 ):
     """
-    Zonal histogram for many buffers x all bands (years) in looped pass.
-    Rasterizing once per iteration speeds up operations.
+    Compute zonal histogram of land cover classes for concentric lake buffers.
 
-    Now uses pre-opened raster datasets and supports dual-raster system for large lakes.
+    Rasterizes buffers once per band for efficiency and computes area-weighted
+    counts of each land cover class. Supports dual-raster system for processing
+    large lakes with coarsened resolution.
+
+    Parameters
+    ----------
+    poly : geopandas.GeoDataFrame
+        Lake geometry with at minimum 'Area_m2', 'Perim_m2' columns.
+    buffer_lengths : list
+        Buffer distances from lake edge (meters). Include 0 for lake-only analysis.
+    raster_dataset : rasterio.DatasetReader
+        Open raster dataset with land cover classes as bands.
+    classes : list[str]
+        Ordered land cover class names (length must match raster value range).
+    years : list[int]
+        Year corresponding to each raster band.
+    nodata : int, optional
+        Raster nodata value. Default is 255.
+    all_touched : bool, optional
+        If True, include all cells touched by buffer geometries. Default is False.
+    join_index : str, optional
+        Column name for join index. Default is 'join_idx'.
+    large_lake_threshold : float, optional
+        Lake area threshold (m²) for using coarse raster. Default is 30e6.
+    raster_dataset_coarse : rasterio.DatasetReader, optional
+        Coarsened raster for large lakes. Default is None.
+
+    Returns
+    -------
+    pandas.DataFrame or None
+        Area (hectares) per class per buffer per year. Returns None if geometry
+        does not overlap raster.
     """
     assert len(poly) >= 1, "poly must contain at least one geometry"
     lake_geom = poly.geometry.iloc[0] if len(poly) == 1 else poly.unary_union
@@ -158,12 +187,14 @@ _RASTER_DATASET_COARSE = None
 _LARGE_LAKE_THRESHOLD = None
 
 
-def _create_nan_dataframe(poly, buffer_lengths, classes, years, join_index):
-    """
-    Create NaN-filled DataFrame when no raster overlap occurs.
-
-    Ensures consistent output structure even for lakes outside raster coverage.
-    """
+def _create_nan_dataframe(
+    poly: gpd.GeoDataFrame,
+    buffer_lengths: list,
+    classes: list[str],
+    years: list[int],
+    join_index: str,
+) -> pd.DataFrame:
+    """Create NaN-filled DataFrame for geometries outside of raster coverage."""
     n_bands = len(years)
     n_buffers = len(buffer_lengths)
     n_rows = n_bands * n_buffers
@@ -183,16 +214,17 @@ def _create_nan_dataframe(poly, buffer_lengths, classes, years, join_index):
 
 
 def _init_worker(
-    csv_path,
-    raster_crs_wkt,
-    buffer_lengths,
-    pth_lc_in,
-    classes,
-    years,
-    join_index,
-    pth_lc_in_coarse=None,
-    large_lake_threshold=30e6,
-):
+    csv_path: str,
+    raster_crs_wkt: str,
+    buffer_lengths: list,
+    pth_lc_in: str,
+    classes: list[str],
+    years: list[int],
+    join_index: str,
+    pth_lc_in_coarse: str | None = None,
+    large_lake_threshold: float = 30e6,
+) -> None:
+    """Initialize worker process with global raster and configuration state."""
     global _CSV_PATH, _RASTER_CRS, _BUFFER_LENGTHS, _PTH_LC_IN, _CLASSES, _YEARS, _JOIN_INDEX
     global _RASTER_DATASET, _RASTER_DATASET_COARSE, _LARGE_LAKE_THRESHOLD
 
@@ -215,7 +247,8 @@ def _init_worker(
         _RASTER_DATASET_COARSE = None
 
 
-def _gdf_from_payload(payload, crs):
+def _gdf_from_payload(payload: dict, crs) -> "gpd.GeoDataFrame":
+    """Reconstruct GeoDataFrame from picklable payload dictionary."""
     geom = _wkb.loads(payload["geometry_wkb"])
     join_index = _JOIN_INDEX
     # Note column order matters
@@ -232,9 +265,8 @@ def _gdf_from_payload(payload, crs):
     return gdf
 
 
-def _append_df_csv_locked(df: pd.DataFrame, csv_path: str):
-    # POSIX advisory lock on the file while writing
-    # Ensures header is written once and rows append atomically
+def _append_df_csv_locked(df: pd.DataFrame, csv_path: str) -> None:
+    """Atomically append DataFrame to CSV with POSIX file locking."""
     with open(csv_path, "a+", newline="") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         need_header = f.tell() == 0  # at end because "a+" opens and seeks to end
@@ -244,7 +276,8 @@ def _append_df_csv_locked(df: pd.DataFrame, csv_path: str):
         fcntl.flock(f, fcntl.LOCK_UN)
 
 
-def _worker(payload):
+def _worker(payload: dict) -> tuple:
+    """Process single lake: extract buffer zonal stats and write to CSV."""
     join_index = _JOIN_INDEX
 
     try:
@@ -273,12 +306,8 @@ def _worker(payload):
         return payload[join_index], f"ERROR: {e}"
 
 
-def _prime_header(
-    csv_path: Path,
-    classes,
-    years_cols,
-):
-    # Create file with header if missing/empty to guarantee consistent column order
+def _prime_header(csv_path: Path, classes: list[str], years_cols: tuple) -> None:
+    """Initialize CSV file with column headers if missing or empty."""
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     if not csv_path.exists() or csv_path.stat().st_size == 0:
         cols = list(classes) + list(years_cols)
@@ -287,26 +316,70 @@ def _prime_header(
 
 
 def extractTimeSeriesForLakes(
-    pth_shp_in,
-    buffer_lengths,
-    csv_out_pth,
-    pth_lc_in,
-    use_simplified_classes,
-    classes,
-    years,
-    envelope_pth=None,
-    join_index=None,
-    n_workers=8,
-    pth_lc_in_coarse=None,
-    large_lake_threshold=30e6,
-):
+    pth_shp_in: str | Path,
+    buffer_lengths: list,
+    csv_out_pth: str | Path,
+    pth_lc_in: str | Path,
+    use_simplified_classes: bool,
+    classes: list[str],
+    years: list[int],
+    envelope_pth: str | Path | None = None,
+    join_index: str | None = None,
+    n_workers: int = 8,
+    pth_lc_in_coarse: str | Path | None = None,
+    large_lake_threshold: float = 30e6,
+) -> None:
+    """
+    Extract land cover time series for buffers around lake/catchment polygons.
+
+    Loads lake geometries, computes concentric buffers, and extracts zonal
+    statistics from raster data. Uses multiprocessing with POSIX file locking
+    for CSV writes and supports resumption from incomplete runs.
+
+    Parameters
+    ----------
+    pth_shp_in : str | Path
+        Path to input lake polygon shapefile or GeoPackage.
+    buffer_lengths : list
+        Buffer distances from lake edge (meters). Include 0 for lake-only.
+    csv_out_pth : str | Path
+        Output CSV path for land cover time series.
+    pth_lc_in : str | Path
+        Path to high-resolution land cover raster.
+    use_simplified_classes : bool
+        If True, use simplified class set (unused in current version).
+    classes : list[str]
+        Land cover class names matching raster value ordering.
+    years : list[int]
+        Year per raster band.
+    envelope_pth : str | Path, optional
+        Path to polygon geometry for spatial filtering. Default is None.
+    join_index : str, optional
+        Column name for unique lake identifier. Auto-created if None.
+    n_workers : int, optional
+        Number of parallel processes. Use 1 for serial debugging. Default is 8.
+    pth_lc_in_coarse : str | Path, optional
+        Path to coarsened raster for large lakes. Default is None.
+    large_lake_threshold : float, optional
+        Lake area threshold (m2) for using coarse raster. Default is 30e6.
+
+    Raises
+    ------
+    AssertionError
+        If envelope CRS does not match polygon CRS.
+
+    Notes
+    -----
+    Automatically resumes from incomplete runs by checking existing CSV.
+    Returns silently if all polygons already processed.
+    """
     print("Paths:")
     print(csv_out_pth)
     print(f"\nUse simplified classes: {use_simplified_classes}")
     print(f"Large lake threshold: {large_lake_threshold/1e6:.1f} km²")
 
     # Load polygons and project to raster CRS
-    polys = gpd.read_file(pth_shp_in) #, rows=slice(0, 12000))  # slice(90000,90090)) #
+    polys = gpd.read_file(pth_shp_in)
     with rio.open(pth_lc_in) as src:
         raster_crs = src.crs
     if polys.crs != raster_crs:
@@ -316,35 +389,33 @@ def extractTimeSeriesForLakes(
     # Attributes needed downstream
     if join_index is None:
         join_index = "join_idx"
-        polys[join_index] =  polys.index
+        polys[join_index] = polys.index
     polys["Area_m2"] = polys.area
     polys["Perim_m2"] = polys.length
-    polys["Lake_name"] = polys.index  # keep stable name
+    polys["Lake_name"] = polys.index
 
     # Optional envelope filter
     if envelope_pth is not None:
         envelope = gpd.read_file(envelope_pth)
         assert envelope.crs == polys.crs, "CRS mismatch: envelope vs. polygons"
-        polys = polys[
-            polys.geometry.intersects(envelope.union_all(), align=False)#  & (polys.Area_m2 < 10e6)
-        ]
+        polys = polys[polys.geometry.intersects(envelope.union_all(), align=False)]
         print(f"Filtered polygons by envelope: {len(polys)} features")
 
     out_path = Path(csv_out_pth)
-    
 
-    # Resume support: read already processed Join_idx
+    # Resume support: read already processed join_index
     done_idx = set() # e.g. {}
     try:
         if out_path.exists() and out_path.stat().st_size > 0:
-            # Only load Join_idx column for speed/memory
             done_col = pd.read_csv(out_path, usecols=[join_index])[join_index]
             done_idx = set(done_col.dropna().unique().tolist())
             print(f"Resuming: found {len(done_idx)} completed lakes in existing CSV.")
         else:
             _prime_header(
-        out_path, classes, ("Year", "Buffer_m", "Lake_name", join_index, "Area_m2", "Perim_m2")
-    )
+                out_path,
+                classes,
+                ("Year", "Buffer_m", "Lake_name", join_index, "Area_m2", "Perim_m2"),
+            )
     except Exception as e:
         print(f"Resume read failed ({e}); proceeding without resume filtering.")
 
@@ -360,7 +431,7 @@ def extractTimeSeriesForLakes(
         payloads.append(
             {
                 "Lake_name": int(row["Lake_name"]),
-                join_index: row[join_index], # HERE HACK not to use int
+                join_index: row[join_index],
                 "Area_m2": float(row["Area_m2"]),
                 "Perim_m2": float(row["Perim_m2"]),
                 "geometry_wkb": row.geometry.wkb,
@@ -371,31 +442,29 @@ def extractTimeSeriesForLakes(
     ctx = get_context("fork")
     chunksize = max(1, len(payloads) // (n_workers * 8) or 1)
 
-    # Updated initializer arguments with new parameters
     initargs = (
         str(out_path),
         raster_crs.to_wkt(),
         list(buffer_lengths),
-        pth_lc_in,
+        str(pth_lc_in),
         list(classes),
         list(years),
         join_index,
-        pth_lc_in_coarse,  # New parameter for dual-raster system
-        large_lake_threshold,  # New parameter for size threshold
+        str(pth_lc_in_coarse) if pth_lc_in_coarse else None,
+        large_lake_threshold,
     )
 
     # Serial vs. multiprocessing execution
     if n_workers == 1:
-        # Serial execution for debugging
         _init_worker(
             str(out_path),
             raster_crs.to_wkt(),
             list(buffer_lengths),
-            pth_lc_in,
+            str(pth_lc_in),
             list(classes),
             list(years),
             join_index,
-            pth_lc_in_coarse,
+            str(pth_lc_in_coarse) if pth_lc_in_coarse else None,
             large_lake_threshold,
         )
         iterator = map(_worker, payloads)
@@ -412,7 +481,6 @@ def extractTimeSeriesForLakes(
                 errors += 1
                 print(f"[Join_idx={join_idx}] {status}")
     else:
-        # Multiprocessing execution
         with ctx.Pool(processes=n_workers, initializer=_init_worker, initargs=initargs) as pool:
             iterator = pool.imap_unordered(_worker, payloads, chunksize=chunksize)
             iterator = tqdm(iterator, total=len(payloads), desc="Lakes")
@@ -433,22 +501,47 @@ def extractTimeSeriesForLakes(
 
 
 def normalizeTimeSeries(
-    xlsx_out_pth,
-    xlsx_out_norm_pth,
-    classes_wet,
-    classes_dry,
-    classes_dry_rn,
-    use_simplified_classes=False,
-    wetland_class='Shallows/littoral',
-):
-    '''
-    Loads 'xlsx_out_pth', normalizes water classes by total water and land classes by total land (in buffer). Outputs data to 'xlsx_out_norm_pth'.
-    '''
+    out_pth: str | Path,
+    out_norm_pth: str,
+    classes_wet: list[str],
+    classes_dry: list[str],
+    classes_dry_rn: list[str],
+    use_simplified_classes: bool = False,
+    wetland_class: str = "Shallows/littoral",
+) -> None:
+    """
+    Normalize land cover areas to percentages of water and land.
+
+    Computes water and land class percentages separately and creates derived
+    metrics like inundation percentage and vegetation group aggregates.
+
+    Parameters
+    ----------
+    out_pth : str
+        Path to input CSV with raw land cover areas (hectares).
+    out_norm_pth : str
+        Path to output CSV with normalized percentages.
+    classes_wet : list[str]
+        Water class names (typically 'Water', 'Wetland').
+    classes_dry : list[str]
+        Terrestrial land cover class names.
+    classes_dry_rn : list[str]
+        Renamed terrestrial class names (spaces/slashes removed).
+    use_simplified_classes : bool, optional
+        Must be False (full 14 classes required). Default is False.
+    wetland_class : str, optional
+        Name of littoral/shallow water class. Default is 'Shallows/littoral'.
+
+    Raises
+    ------
+    AssertionError
+        If use_simplified_classes is True.
+    """
     assert use_simplified_classes==False, "Must run on full 14 (not-simplified) classes."
 
     ## Load
     print('Normalizing land cover...')
-    df = pd.read_csv(xlsx_out_pth)
+    df = pd.read_csv(out_pth)
 
     ## find littoral percent of water areas (TODO: ensure it only comes from largest/central water body within buffer)
     df['Littorals_pct'] = df[wetland_class] / df.loc[:,classes_wet].sum(axis=1)*100
@@ -479,26 +572,44 @@ def normalizeTimeSeries(
         df[var + '_pct'] = df[var] / df.loc[:,classes_dry_rn].sum(axis=1)*100
 
     ## Write out
-    df.to_csv(xlsx_out_norm_pth, float_format=FLOAT_FORMAT_SHORT)
-    print(f'Wrote normalized output table: {xlsx_out_norm_pth}')
+    df.to_csv(out_norm_pth, float_format=FLOAT_FORMAT_SHORT)
+    print(f'Wrote normalized output table: {out_norm_pth}')
 
 
 def normalizeTimeSeries_above_boreal(
-    xlsx_out_pth,
-    xlsx_out_norm_pth,
-    classes_wet,
-    classes_dry,
-    wetland_class="Wetland",
-    index_class="Lake_id_glakes",
-):
+    out_pth: str | Path,
+    out_norm_pth: str | Path,
+    classes_wet: list[str],
+    classes_dry: list[str],
+    wetland_class: str = "Wetland",
+    index_class: str = "Lake_id_glakes",
+) -> None:
     """
-    As above, but modified for the new land cover classes in Hu et al. 2025.
+    Normalize ABoVE land cover classes to percentages (Hu et al. 2025).
+
+    Computes water and land class percentages and creates aggregated vegetation
+    groups (Trees, Sparse, Total_inun). Supports both CSV and Parquet output.
+
+    Parameters
+    ----------
+    out_pth : str
+        Path to input CSV/Parquet with raw land cover areas (hectares).
+    out_norm_pth : str
+        Path to output CSV/Parquet with normalized percentages.
+    classes_wet : list[str]
+        Water class names.
+    classes_dry : list[str]
+        Terrestrial land cover class names.
+    wetland_class : str, optional
+        Name of wetland class. Default is 'Wetland'.
+    index_class : str, optional
+        Column name for lake unique identifier. Default is 'Lake_id_glakes'.
     """
     classes = np.unique(classes_dry + classes_wet).tolist()
     ## Load
     print("Normalizing land cover...")
     usecols = classes + ["Year", index_class, "Area_m2", "Perim_m2"]
-    df = pd.read_csv(xlsx_out_pth, usecols=usecols) #, nrows=1000) # all but Lake_name and Buffer_m
+    df = pd.read_csv(out_pth, usecols=usecols) #, nrows=1000) # all but Lake_name and Buffer_m
 
     ## Find wetland percent, like michela does, by taking: (L+B+F)/(L+B+F+W)*100 (TODO: ensure it only comes from largest/central water body within buffer)
     df["Littoral_wetland_pct"] = df[wetland_class] / df.loc[:, classes_wet].sum(axis=1) * 100
@@ -524,18 +635,47 @@ def normalizeTimeSeries_above_boreal(
 
     ## Write out
     # write with FLOAT_FORMAT_SHORT decimal places
-    if xlsx_out_norm_pth.endswith('.parquet'):
-        df.to_parquet(xlsx_out_norm_pth, index=False)
+    if out_norm_pth.endswith('.parquet'):
+        df.to_parquet(out_norm_pth, index=False)
     else:
-        df.to_csv(xlsx_out_norm_pth, float_format=FLOAT_FORMAT_SHORT)
-    print(f"Wrote normalized output table: {xlsx_out_norm_pth}")
+        df.to_csv(out_norm_pth, float_format=FLOAT_FORMAT_SHORT)
+    print(f"Wrote normalized output table: {out_norm_pth}")
 
 
-def plotTimeSeries(buffer_lengths, xlsx_out_norm_pth, plot_dir, index_col=None, index=None, combined=False):
+def plotTimeSeries(
+    buffer_lengths: list,
+    out_norm_pth: str | Path,
+    plot_dir: str,
+    index_col: str | None = None,
+    index: list | None = None,
+    combined: bool = False,
+) -> None:
     """
-    Loads 'xlsx_out_norm_pth', manipulates data, and creates a multi-facted time-series plot for each lake from the ABoVE landcover dataset, plotting in ha, not normalized, by default. Saves plots to 'plot_dir'
-    If index_col is provided, only plots indexes in `index`
-    If combined == True, plots all lakes in one figure, using area-weighted means across lakes.
+    Create faceted time-series plots of land cover for each lake.
+
+    Generates FacetGrid plots with separate panels per land cover class and
+    hue for different buffer sizes. Supports single-lake and aggregated views.
+
+    Parameters
+    ----------
+    buffer_lengths : list
+        Buffer distances used (typically includes smallest buffer).
+    out_norm_pth : str | Path
+        Path to normalized land cover CSV/Parquet.
+    plot_dir : str
+        Output directory for saving plots.
+    index_col : str, optional
+        Lake identifier column name. Default is None.
+    index : list, optional
+        List of lake identifiers to plot. If None, plots all. Default is None.
+    combined : bool, optional
+        If True, creates single aggregated plot with area-weighted means.
+        Default is False.
+
+    Notes
+    -----
+    Plots are saved as PNG files with format 'ts-facets-{index_col}-{lake}.png'.
+    Requires columns: Year, Buffer_m, Area_m2, and land cover class columns.
     """
 
     ## vars
@@ -543,12 +683,12 @@ def plotTimeSeries(buffer_lengths, xlsx_out_norm_pth, plot_dir, index_col=None, 
 
     ## Load
     print('Plotting land cover...')
-    if xlsx_out_norm_pth.endswith(".parquet"):
-        df = pd.read_parquet(xlsx_out_norm_pth)
-    elif xlsx_out_norm_pth.endswith(".csv"):
-        df = pd.read_csv(xlsx_out_norm_pth, index_col=0)
+    if out_norm_pth.endswith(".parquet"):
+        df = pd.read_parquet(out_norm_pth)
+    elif out_norm_pth.endswith(".csv"):
+        df = pd.read_csv(out_norm_pth, index_col=0)
     else:
-        raise ValueError("Unsupported file format for xlsx_out_norm_pth")
+        raise ValueError("Unsupported file format for out_norm_pth")
 
     if index_col is not None:
         assert index_col in df.columns, f"Column '{index_col}' not found in DataFrame. Available columns: {df.columns.tolist()}"
@@ -620,25 +760,56 @@ def plotTimeSeries(buffer_lengths, xlsx_out_norm_pth, plot_dir, index_col=None, 
 
 
 def extractTimeSeriesFeatures(
-    xlsx_out_norm_pth,
-    years,
-    classes_dry_rn,
-    pth_shp_in,
-    ds_specific_vars,
-    csv_out_time_series_features_pth,
-    important_vars,
-    csv_out_time_series_features_core_pth,
-    shp_out_time_series_features_core_pth,
-    join_index="join_idx",
-):
-    '''
-    Loads data from 'xlsx_out_norm_pth' and reduces each time series for the specified buffer (probably smallest buffer) to a series of features/metrics.
-    Outputs data to 'xlsx_out_time_series_features_pth'.
-    '''
+    out_norm_pth: str | Path,
+    years: list[int],
+    classes_dry_rn: list[str],
+    pth_shp_in: str,
+    ds_specific_vars: list[str],
+    csv_out_time_series_features_pth: str,
+    important_vars: list[str],
+    csv_out_time_series_features_core_pth: str,
+    shp_out_time_series_features_core_pth: str,
+    join_index: str = "join_idx",
+) -> None:
+    """
+    Extract time series summary metrics from normalized land cover data.
+
+    Computes statistics per lake including median values, temporal trends,
+    dominant vegetation, and shape metrics (SDF, perimeter/area ratio).
+    Outputs full feature set, core subset, and GeoPackage with geometries.
+
+    Parameters
+    ----------
+    out_norm_pth : str | Path
+        Path to normalized land cover CSV with all years/buffers.
+    years : list[int]
+        Years corresponding to land cover time series.
+    classes_dry_rn : list[str]
+        Terrestrial land cover class names (space/slash-free).
+    pth_shp_in : str
+        Path to input lake polygon shapefile for geometry/attributes.
+    ds_specific_vars : list[str]
+        Dataset-specific columns to include in output (metadata).
+    csv_out_time_series_features_pth : str
+        Output CSV/Parquet with all computed features.
+    important_vars : list[str]
+        Subset of features for core output.
+    csv_out_time_series_features_core_pth : str
+        Output CSV/Parquet with important_vars subset.
+    shp_out_time_series_features_core_pth : str
+        Output GeoPackage with geometries and important_vars.
+    join_index : str, optional
+        Lake identifier column name. Default is 'join_idx'.
+
+    Notes
+    -----
+    Computes Mann-Kendall trends and Theil-Sen slopes for temporal changes.
+    Uses 2014 as reference year (assumes specific year ordering in input).
+    """
 
     ## Load
     print('Calculating time series features...')
-    df = pd.read_csv(xlsx_out_norm_pth, index_col=0)
+    df = pd.read_csv(out_norm_pth, index_col=0)
 
     ## Filter by buffer length
     df.query('Buffer_m == @buffer_lengths[0]', inplace=True)
@@ -731,29 +902,63 @@ def extractTimeSeriesFeatures(
 
 
 def extractTimeSeriesFeatures_above_boreal(
-    xlsx_out_norm_pth,
-    years,
-    classes_dry_rn,
-    pth_shp_in,
-    ds_specific_vars,
-    csv_out_time_series_features_pth,
-    important_vars,
-    csv_out_time_series_features_core_pth,
-    csv_out_time_series_features_short_pth,
-    join_index="Lake_id_glakes",
-    grouped_classes=["Trees", "Shrub", "Wetland", "Herb", "Sparse"],
-):
+    out_norm_pth: str | Path,
+    years: list[int],
+    classes_dry_rn: list[str],
+    pth_shp_in: str | Path,
+    ds_specific_vars: list[str],
+    csv_out_time_series_features_pth: str,
+    important_vars: list[str],
+    csv_out_time_series_features_core_pth: str,
+    csv_out_time_series_features_short_pth: str,
+    join_index: str = "Lake_id_glakes",
+    grouped_classes: list[str] = ["Trees", "Shrub", "Wetland", "Herb", "Sparse"],
+) -> None:
     """
-    Loads data from 'xlsx_out_norm_pth' and reduces each time series for the specified buffer (probably smallest buffer) to a series of features/metrics.
-    Outputs data to 'xlsx_out_time_series_features_pth'.
+    Extract time series metrics from ABoVE land cover data (Hu et al. 2025).
+
+    Computes lake-level statistics including dominant vegetation, inundation
+    dynamics, and renormalized class transitions. Outputs three variants: full
+    features, core subset, and short version before joining with spatial data.
+
+    Parameters
+    ----------
+    out_norm_pth : str
+        Path to normalized ABoVE land cover CSV with all years/buffers.
+    years : list[int]
+        Years corresponding to time series (e.g., 1986-2014).
+    classes_dry_rn : list[str]
+        All land cover class names (space/slash-free).
+    pth_shp_in : str | Path
+        Path to input lake polygon shapefile for attributes.
+    ds_specific_vars : list[str]
+        Dataset-specific metadata columns to include.
+    csv_out_time_series_features_pth : str
+        Output CSV/Parquet with full features joined to spatial data.
+    important_vars : list[str]
+        Subset of features for core output.
+    csv_out_time_series_features_core_pth : str
+        Output CSV/Parquet with important_vars subset.
+    csv_out_time_series_features_short_pth : str
+        Output CSV with features before spatial join (diagnostic).
+    join_index : str, optional
+        Lake identifier column. Default is 'Lake_id_glakes'.
+    grouped_classes : list[str], optional
+        Aggregated vegetation group names. Default is standard ABoVE grouping.
+
+    Notes
+    -----
+    Uses nth(28) to extract 2014 values (assumes 29-year series with annual steps).
+    Computes class transitions via renormalized changes from first to last year.
     """
 
     def _renorm_changes_above_boreal(
-        g: pd.DataFrame, forest={"Deciduous_Forest", "Evergreen_Forest", "Mixed_Forest"}
-    ) -> pd.Series:
-        # g = g.sort_values("Year")
-        first = g.iloc[0] #.astype(float) # HACK
-        last = g.iloc[-1] # .astype(float)
+        g: "pd.DataFrame",
+        forest: set[str] = {"Deciduous_Forest", "Evergreen_Forest", "Mixed_Forest"},
+    ) -> "pd.Series":
+        """Compute renormalized land cover class transitions between first/last year."""
+        first = g.iloc[0]
+        last = g.iloc[-1]
 
         first_dry = first[classes_dry_rn]
         last_dry = last[classes_dry_rn]
@@ -789,7 +994,7 @@ def extractTimeSeriesFeatures_above_boreal(
 
     ## Load
     print("Calculating time series features...")
-    df = pd.read_csv(xlsx_out_norm_pth) #, nrows=3500) #, index_col=0)
+    df = pd.read_csv(out_norm_pth) #, nrows=3500) #, index_col=0)
     if "Unnamed: 0" in df.columns:
         df.drop(columns="Unnamed: 0", inplace=True)
 
