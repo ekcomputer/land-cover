@@ -1,17 +1,19 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-'''
+"""
 Summary
 For calculating land cover and its change within polygons representing outwards buffers from lakes.
 Can optionally join in all attributes from original lake dataset.
+With optimizations like pre-loading raster datasets, memory management, and using a coarsened raster
+for large catchments: runs at 60 it/sec.
 
 Write three outputs:
 1. All input variables for lakes that were matched to land cover
 2. All input variables for all lakes
 3. Selected input variables for all lakes
 
-TODO: 
+TODO:
 * Check that water normalization only refers to largest/central lake within buffer.
 * Add watershed buffer x
 * IMPORTANT: Find a way to automatically include Lat/Long and any note columns in final spreadsheet (perhaps join in?) Right now, I'm just using a quick fix in Excel.
@@ -19,9 +21,8 @@ TODO:
 * Remove hacks for numeric types if running on GLAKES again
 
 2025 problems:
-'''
+"""
 
-import atexit
 import fcntl
 import gc
 import os
@@ -37,9 +38,6 @@ import rasterio as rio
 import seaborn as sns
 from pyproj import CRS
 from rasterio.mask import mask as rio_mask
-from rasterio.plot import reshape_as_image
-# from scipy.stats import binned_statistic
-from rasterstats import zonal_stats
 from scipy.stats.mstats import theilslopes
 from shapely import wkb as _wkb
 from tqdm import tqdm
@@ -114,9 +112,9 @@ def extractBufferZonalHist(
         out_shape=(H, W),
         transform=tr,
         all_touched=all_touched,
-        dtype="uint16",
+        dtype="uint8",
     )
-    counts = np.empty((n_bands, n_buffers, nclasses), dtype=np.uint32)
+    counts = np.empty((n_bands, n_buffers, nclasses), dtype=np.float32)
     valid_vals = (data >= 1) & (data <= nclasses)
 
     for bi in range(n_bands):
@@ -130,9 +128,9 @@ def extractBufferZonalHist(
             return None
         counts[bi] = bc
 
-    # Scale to area (hectares), consistent with previous division by 1e4
+    # Scale to area (hectares)
     pix_area_ha = abs(src.res[0] * src.res[1]) / 10000.0
-    areas = counts.reshape(n_bands * n_buffers, nclasses).astype("float64") * pix_area_ha
+    areas = counts.reshape(n_bands * n_buffers, nclasses) * pix_area_ha
 
     # --- assemble dataframe efficiently ---
     df = pd.DataFrame(areas, columns=classes)
@@ -525,7 +523,7 @@ def normalizeTimeSeries_above_boreal(
         df[var + "_pct"] = df[var] / class_sum * 100
 
     ## Write out
-    # write with 3 decimal places
+    # write with FLOAT_FORMAT_SHORT decimal places
     if xlsx_out_norm_pth.endswith('.parquet'):
         df.to_parquet(xlsx_out_norm_pth, index=False)
     else:
@@ -586,20 +584,6 @@ def plotTimeSeries(buffer_lengths, xlsx_out_norm_pth, plot_dir, index_col=None, 
         dfg = df_combined.groupby("agg_group")
     else:
         pass
-    # group = dfg.get_group('Balloon lake') # formerly ('Balloon lake', buf_len)
-
-    ## Plot with mpl
-    # fig, ax = plt.subplots()
-    # group.plot(x='Year', y='Littorals_pct', ax=ax)
-    # plt.savefig(os.path.join(plot_dir, 'time-series-1.png'))
-
-    ## Try facet grid in seaborn
-    # dfl = pd.melt(group, id_vars=['Year', 'Buffer_m'], value_vars=df.columns[1:16], var_name = 'Class', value_name=value_name)# data frame long format # use df.columns[-14:] for normalized vals
-    # g = sns.FacetGrid(dfl, col="Class", hue="Buffer_m", col_wrap=4)
-    # g.map(sns.lineplot, 'Year', value_name)
-    # g.add_legend(title="Buffer (m)")
-    # plt.show()
-    # g.savefig(os.path.join(plot_dir, 'time-series-facets-1.png'))
 
     ## Plot for all lakes!
     ## Note: OG slices were 1-16, 21-36, 42-47
@@ -722,11 +706,21 @@ def extractTimeSeriesFeatures(
     [stats.insert(0, col, stats.pop(col)) for col in joined_cols[-1::-1]] # re-order cols # TODO import load.sortColumns
 
     ## Write out
-    stats.to_csv(csv_out_time_series_features_pth, float_format=FLOAT_FORMAT_LONG)
+    if csv_out_time_series_features_pth.endswith(".parquet"):
+        stats.to_parquet(csv_out_time_series_features_pth, index=False)
+    else:
+        stats.to_csv(csv_out_time_series_features_pth, float_format=FLOAT_FORMAT_LONG)
     print(f'Wrote time series output table: {csv_out_time_series_features_pth}')
 
     ## Save and write out most important stats
-    stats.loc[:, ds_specific_vars + important_vars].to_csv(csv_out_time_series_features_core_pth, float_format=FLOAT_FORMAT_LONG)
+    if csv_out_time_series_features_core_pth.endswith(".parquet"):
+        stats.loc[:, ds_specific_vars + important_vars].to_parquet(
+            csv_out_time_series_features_core_pth, index=False
+        )
+    else:
+        stats.loc[:, ds_specific_vars + important_vars].to_csv(
+            csv_out_time_series_features_core_pth, float_format=FLOAT_FORMAT_LONG
+        )
     print(f'Wrote time series output table (greatest hits): {csv_out_time_series_features_core_pth}')
 
     ## Save shapefile
@@ -907,13 +901,20 @@ def extractTimeSeriesFeatures_above_boreal(
     ]  # re-order cols # TODO import load.sortColumns
 
     ## Write out
-    stats.to_parquet(csv_out_time_series_features_pth.replace(".csv", ".parquet"), index=False)
+    # Write full output in appropriate format
+    if csv_out_time_series_features_pth.endswith(".parquet"):
+        stats.to_parquet(csv_out_time_series_features_pth, index=False)
+    else:
+        stats.to_csv(csv_out_time_series_features_pth, float_format=FLOAT_FORMAT_LONG, index=False)
     print(f"Wrote time series output table: {csv_out_time_series_features_pth}")
 
     ## Save and write out most important stats
-    stats.loc[:, important_vars].to_parquet(
-        csv_out_time_series_features_core_pth.replace(".csv", ".parquet"), index=False
-    )
+    if csv_out_time_series_features_core_pth.endswith(".parquet"):
+        stats.loc[:, important_vars].to_parquet(csv_out_time_series_features_core_pth, index=False)
+    else:
+        stats.loc[:, important_vars].to_csv(
+            csv_out_time_series_features_core_pth, float_format=FLOAT_FORMAT_LONG, index=False
+        )
     print(
         f"Wrote time series output table (greatest hits): {csv_out_time_series_features_core_pth}"
     )
