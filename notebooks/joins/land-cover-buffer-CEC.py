@@ -1,7 +1,7 @@
 """Version of lake buffers script for harmonized DOC dataset joined to lake catchments.
 
 Modified to use CEC land cover dataset instead of above boreal landcover.
-Uses re-write script called land_cover.land_cover_in_buffers.extract_time_series_for_lakes
+Uses AI re-write script called land_cover.land_cover_in_buffers.extract_time_series_for_lakes
 
 Still doesn't work with parquet...
 TODO:

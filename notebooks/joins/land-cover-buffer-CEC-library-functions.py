@@ -14,6 +14,7 @@ import geopandas as gpd
 import numpy as np
 
 from land_cover.land_cover_change_buffer_from_csv import extractTimeSeriesForLakes
+from pathlib import Path
 from land_cover.load import (cec_30m_lc_pth, cec_30m_lc_rs250_pth,
                              doc_jn_catchment_pth, plot_dir,
                              time_series_features_cec_doc_csv_pth)
@@ -151,21 +152,14 @@ important_vars = [
 ## dynamic values
 classes_dry_rn = [item.replace(" ", "_").replace("/", "_") for item in classes_dry]
 
-parquet_out_norm_pth = time_series_features_cec_doc_csv_pth.replace(
-    ".csv", "_norm.parquet"
-)  # e.g. /Volumes/thebe/ABoVE2021/Mapping/out/xlsx/ABOVE_coordinates_for_Ethan_10-19-21_jn_PADLakesVis_landCoverBuffers_norm.csv
-parquet_out_time_series_features_pth = time_series_features_cec_doc_csv_pth.replace(
-    ".parquet", "_tsFeatures.parquet"
-)  # e.g. /Volumes/thebe/ABoVE2021/Mapping/out/xlsx/ABOVE_coordinates_for_Ethan_10-19-21_jn_PADLakesVis_landCoverBuffers_tsFeatures.csv
-parquet_out_time_series_features_core_pth = time_series_features_cec_doc_csv_pth.replace(
-    ".parquet", "_core_tsFeatures.parquet"
-)
-parquet_out_time_series_features_short_pth = time_series_features_cec_doc_csv_pth.replace(
-    ".parquet", "_short_tsFeatures.parquet"
-)
-shp_out_time_series_features_core_pth = parquet_out_time_series_features_core_pth.replace(
-    ".parquet", ".gpkg"
-)
+base_path = Path(time_series_features_cec_doc_csv_pth)
+stem = base_path.stem
+
+parquet_out_norm_pth = base_path.parent / f"{stem}_norm.parquet"
+parquet_out_time_series_features_pth = base_path.parent / f"{stem}_tsFeatures.parquet"
+parquet_out_time_series_features_core_pth = base_path.parent / f"{stem}_core_tsFeatures.parquet"
+parquet_out_time_series_features_short_pth = base_path.parent / f"{stem}_short_tsFeatures.parquet"
+shp_out_time_series_features_core_pth = base_path.parent / f"{stem}_core_tsFeatures.gpkg"
 
 ## RUN for preliminary harmonized DOC with no buffers
 
@@ -179,9 +173,8 @@ extractTimeSeriesForLakes(
     years=years,
     # envelope_pth=above_lc_boreal_envelope_pth,
     join_index="sample_idx",
-    batch_size=300,
-    n_workers=4,
-    raster_path_coarse=cec_30m_lc_rs250_pth,
+    n_workers=8,
+    pth_lc_in_coarse=cec_30m_lc_rs250_pth,
 )
 # normalizeTimeSeries_above_boreal(
 #     parquet_out_pth, parquet_out_norm_pth, classes_wet, classes_dry, wetland_class="Wetland", index_class="sample_idx"
