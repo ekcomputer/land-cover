@@ -21,95 +21,118 @@ TODO:
 2025 problems:
 '''
 
+import atexit
+import fcntl
+import gc
 import os
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-import pandas as pd
+from multiprocessing import get_context
+from pathlib import Path
+
 import geopandas as gpd
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import pymannkendall
 import rasterio as rio
+import seaborn as sns
+from pyproj import CRS
+from rasterio.mask import mask as rio_mask
 from rasterio.plot import reshape_as_image
 # from scipy.stats import binned_statistic
 from rasterstats import zonal_stats
 from scipy.stats.mstats import theilslopes
-import pymannkendall
-from tqdm import tqdm
-import gc
-import fcntl
-from pathlib import Path
-from multiprocessing import get_context
 from shapely import wkb as _wkb
-from pyproj import CRS
+from tqdm import tqdm
 
 ## Params
 checkpoint_frequency = 1000
 FLOAT_FORMAT_LONG = "%.5f" # csv digits (to save storage space) for time series features
 FLOAT_FORMAT_SHORT = "%.3f" # csv digits for normalized features
 
+
 ## Function
 def extractBufferZonalHist(
-    poly, buffer_lengths, pth_lc_in, classes, years, nodata=255, all_touched=False, join_index="join_idx"
+    poly,
+    buffer_lengths,
+    raster_dataset,
+    classes,
+    years,
+    nodata=255,
+    all_touched=False,
+    join_index="join_idx",
+    large_lake_threshold=30e6,
+    raster_dataset_coarse=None,
 ):
     """
     Zonal histogram for many buffers x all bands (years) in looped pass.
-    Rasterizing once per iteration speeds up operations
+    Rasterizing once per iteration speeds up operations.
+
+    Now uses pre-opened raster datasets and supports dual-raster system for large lakes.
     """
     assert len(poly) >= 1, "poly must contain at least one geometry"
     lake_geom = poly.geometry.iloc[0] if len(poly) == 1 else poly.unary_union
 
-    # Hack: skip large datasets:
-    if lake_geom.area > 50e6:
-        return None
-    with rio.open(pth_lc_in) as src:
-        assert src.crs == poly.crs, "CRS mismatch"
+    # Select appropriate raster based on lake size
+    if raster_dataset_coarse is not None and lake_geom.area > large_lake_threshold:
+        src = raster_dataset_coarse
+    else:
+        src = raster_dataset
 
-        # sort buffers so last one is the outermost ROI for cropping
-        buffer_lengths = list(buffer_lengths)
-        order = np.argsort(buffer_lengths)
-        buffer_lengths_sorted = [buffer_lengths[i] for i in order]
-        buf_geoms = [lake_geom.buffer(L) for L in buffer_lengths_sorted]
-
-        # crop to outermost buffer; everything outside is filled with nodata
-        try:
-            data, tr = rio.mask.mask(src, [buf_geoms[-1]], crop=True, filled=True, nodata=nodata)
-        except ValueError as e:
-            if "do not overlap raster" in str(e).lower():
-                return None
-            raise
-
-        n_bands, H, W = data.shape
-        n_buffers = len(buf_geoms)
-        nclasses = len(classes)
-
-        # --- multi-buffer path: rasterize buffer IDs once, then bin per band ---
-        labels = rio.features.rasterize(
-            [(g, i + 1) for i, g in enumerate(buf_geoms)],
-            out_shape=(H, W),
-            transform=tr,
-            all_touched=all_touched,
-            dtype="uint16",
+    # Enhanced CRS validation for projected coordinates
+    if not src.crs.is_projected:
+        print(
+            f"Warning: Raster CRS {src.crs} is not projected - area calculations may be inaccurate"
         )
-        counts = np.empty((n_bands, n_buffers, nclasses), dtype=np.uint32)
-        valid_vals = (data >= 1) & (data <= nclasses)
-        for bi in range(n_bands):
-            vals = data[bi]
-            m = (labels > 0) & valid_vals[bi] & (vals != nodata)
-            if m.any():
-                keys = (labels[m] - 1) * nclasses + (
-                    vals[m] - 1
-                )  # (buffer_id, class_id) -> 1D key
-                bc = np.bincount(keys, minlength=n_buffers * nclasses).reshape(
-                    n_buffers, nclasses
-                )
-            else:
-                # bc = np.zeros((n_buffers, nclasses), dtype=np.uint32)
-                # These would be lakes inside of my crude envelope but outside of the data area of the rasters
-                return None
-            counts[bi] = bc
+    assert src.crs == poly.crs, f"CRS mismatch: raster {src.crs} vs poly {poly.crs}"
 
-        # scale to area (hectares), consistent with your previous division by 1e4
-        pix_area_ha = abs(src.res[0] * src.res[1]) / 10000.0
-        areas = counts.reshape(n_bands * n_buffers, nclasses).astype("float64") * pix_area_ha
+    # Sort buffers so last one is the outermost ROI for cropping
+    buffer_lengths = list(buffer_lengths)
+    order = np.argsort(buffer_lengths)
+    buffer_lengths_sorted = [buffer_lengths[i] for i in order]
+
+    # Handle zero-buffer case (lake-only analysis)
+    buf_geoms = [
+        lake_geom if length == 0 else lake_geom.buffer(length) for length in buffer_lengths_sorted
+    ]
+
+    # Crop to outermost buffer; everything outside is filled with nodata
+    try:
+        data, tr = rio_mask(src, [buf_geoms[-1]], crop=True, filled=True, nodata=nodata)
+    except ValueError as e:
+        if "do not overlap raster" in str(e).lower():
+            # Return NaN-filled DataFrame instead of None for consistent output
+            return _create_nan_dataframe(poly, buffer_lengths, classes, years, join_index)
+        raise
+
+    n_bands, H, W = data.shape
+    n_buffers = len(buf_geoms)
+    nclasses = len(classes)
+
+    # --- multi-buffer path: rasterize buffer IDs once, then bin per band ---
+    labels = rio.features.rasterize(
+        [(g, i + 1) for i, g in enumerate(buf_geoms)],
+        out_shape=(H, W),
+        transform=tr,
+        all_touched=all_touched,
+        dtype="uint16",
+    )
+    counts = np.empty((n_bands, n_buffers, nclasses), dtype=np.uint32)
+    valid_vals = (data >= 1) & (data <= nclasses)
+
+    for bi in range(n_bands):
+        vals = data[bi]
+        m = (labels > 0) & valid_vals[bi] & (vals != nodata)
+        if m.any():
+            keys = (labels[m] - 1) * nclasses + (vals[m] - 1)  # (buffer_id, class_id) -> 1D key
+            bc = np.bincount(keys, minlength=n_buffers * nclasses).reshape(n_buffers, nclasses)
+        else:
+            # Return NaN-filled DataFrame instead of None when no valid data
+            return _create_nan_dataframe(poly, buffer_lengths, classes, years, join_index)
+        counts[bi] = bc
+
+    # Scale to area (hectares), consistent with previous division by 1e4
+    pix_area_ha = abs(src.res[0] * src.res[1]) / 10000.0
+    areas = counts.reshape(n_bands * n_buffers, nclasses).astype("float64") * pix_area_ha
 
     # --- assemble dataframe efficiently ---
     df = pd.DataFrame(areas, columns=classes)
@@ -131,10 +154,50 @@ _PTH_LC_IN = None
 _CLASSES = None
 _YEARS = None
 _JOIN_INDEX = None
+# New globals for enhanced functionality
+_RASTER_DATASET = None
+_RASTER_DATASET_COARSE = None
+_LARGE_LAKE_THRESHOLD = None
 
 
-def _init_worker(csv_path, raster_crs_wkt, buffer_lengths, pth_lc_in, classes, years, join_index):
+def _create_nan_dataframe(poly, buffer_lengths, classes, years, join_index):
+    """
+    Create NaN-filled DataFrame when no raster overlap occurs.
+
+    Ensures consistent output structure even for lakes outside raster coverage.
+    """
+    n_bands = len(years)
+    n_buffers = len(buffer_lengths)
+    n_rows = n_bands * n_buffers
+
+    # Create DataFrame filled with NaN
+    df = pd.DataFrame(np.full((n_rows, len(classes)), np.nan), columns=classes)
+
+    # Add metadata columns
+    df["Year"] = np.repeat(years[:n_bands], n_buffers)
+    df["Buffer_m"] = np.tile(sorted(buffer_lengths), n_buffers)
+    df["Lake_name"] = poly.index[0]
+    df[join_index] = poly[join_index].iloc[0] if join_index in poly else None
+    df["Area_m2"] = poly["Area_m2"].iloc[0] if "Area_m2" in poly else None
+    df["Perim_m2"] = poly["Perim_m2"].iloc[0] if "Perim_m2" in poly else None
+
+    return df
+
+
+def _init_worker(
+    csv_path,
+    raster_crs_wkt,
+    buffer_lengths,
+    pth_lc_in,
+    classes,
+    years,
+    join_index,
+    pth_lc_in_coarse=None,
+    large_lake_threshold=30e6,
+):
     global _CSV_PATH, _RASTER_CRS, _BUFFER_LENGTHS, _PTH_LC_IN, _CLASSES, _YEARS, _JOIN_INDEX
+    global _RASTER_DATASET, _RASTER_DATASET_COARSE, _LARGE_LAKE_THRESHOLD
+
     _CSV_PATH = csv_path
     _RASTER_CRS = CRS.from_wkt(raster_crs_wkt)
     _BUFFER_LENGTHS = tuple(buffer_lengths)
@@ -142,6 +205,16 @@ def _init_worker(csv_path, raster_crs_wkt, buffer_lengths, pth_lc_in, classes, y
     _CLASSES = list(classes)
     _YEARS = list(years)
     _JOIN_INDEX = join_index
+    _LARGE_LAKE_THRESHOLD = large_lake_threshold
+
+    # Open raster datasets once per worker process (more efficient)
+    _RASTER_DATASET = rio.open(pth_lc_in)
+
+    # Open coarse raster if provided for large lakes
+    if pth_lc_in_coarse is not None:
+        _RASTER_DATASET_COARSE = rio.open(pth_lc_in_coarse)
+    else:
+        _RASTER_DATASET_COARSE = None
 
 
 def _gdf_from_payload(payload, crs):
@@ -175,17 +248,29 @@ def _append_df_csv_locked(df: pd.DataFrame, csv_path: str):
 
 def _worker(payload):
     join_index = _JOIN_INDEX
+
     try:
         poly = _gdf_from_payload(payload, _RASTER_CRS)
         df = extractBufferZonalHist(
-            poly, _BUFFER_LENGTHS, _PTH_LC_IN, classes=_CLASSES, years=_YEARS, join_index=join_index
+            poly,
+            _BUFFER_LENGTHS,
+            _RASTER_DATASET,
+            classes=_CLASSES,
+            years=_YEARS,
+            join_index=join_index,
+            large_lake_threshold=_LARGE_LAKE_THRESHOLD,
+            raster_dataset_coarse=_RASTER_DATASET_COARSE,
         )
-        if df is None or df.empty:
-            return payload[join_index], 0
+
+        # Always write to CSV, even if df is None (will be NaN-filled)
+        return_value = 1
+        if df is None:
+            df = _create_nan_dataframe(poly, _BUFFER_LENGTHS, _CLASSES, _YEARS, join_index)
+            return_value = 0
         _append_df_csv_locked(df, _CSV_PATH)
         del df
         gc.collect()
-        return payload[join_index], 1
+        return payload[join_index], return_value
     except Exception as e:
         return payload[join_index], f"ERROR: {e}"
 
@@ -215,10 +300,12 @@ def extractTimeSeriesForLakes(
     join_index=None,
     n_workers=8,
     pth_lc_in_coarse=None,
+    large_lake_threshold=30e6,
 ):
     print("Paths:")
     print(csv_out_pth)
     print(f"\nUse simplified classes: {use_simplified_classes}")
+    print(f"Large lake threshold: {large_lake_threshold/1e6:.1f} km²")
 
     # Load polygons and project to raster CRS
     polys = gpd.read_file(pth_shp_in) #, rows=slice(0, 12000))  # slice(90000,90090)) #
@@ -251,14 +338,12 @@ def extractTimeSeriesForLakes(
     )
 
     # Resume support: read already processed Join_idx
-    done_idx = set()
+    done_idx = set() # e.g. {}
     try:
         if out_path.exists() and out_path.stat().st_size > 0:
             # Only load Join_idx column for speed/memory
-            done_col = pd.read_csv(out_path, usecols=[join_index], dtype={join_index: "Int64"})[
-                join_index
-            ]
-            done_idx = set(done_col.dropna().astype(int).unique().tolist())
+            done_col = pd.read_csv(out_path, usecols=[join_index])[join_index]
+            done_idx = set(done_col.dropna().unique().tolist())
             print(f"Resuming: found {len(done_idx)} completed lakes in existing CSV.")
     except Exception as e:
         print(f"Resume read failed ({e}); proceeding without resume filtering.")
@@ -286,7 +371,7 @@ def extractTimeSeriesForLakes(
     ctx = get_context("fork")
     chunksize = max(1, len(payloads) // (n_workers * 8) or 1)
 
-    # Progress
+    # Updated initializer arguments with new parameters
     initargs = (
         str(out_path),
         raster_crs.to_wkt(),
@@ -295,6 +380,8 @@ def extractTimeSeriesForLakes(
         list(classes),
         list(years),
         join_index,
+        pth_lc_in_coarse,  # New parameter for dual-raster system
+        large_lake_threshold,  # New parameter for size threshold
     )
 
     with ctx.Pool(processes=n_workers, initializer=_init_worker, initargs=initargs) as pool:
@@ -302,19 +389,18 @@ def extractTimeSeriesForLakes(
         iterator = tqdm(iterator, total=len(payloads), desc="Lakes")
         completed = 0
         errors = 0
+        empty = 0
         for join_idx, status in iterator:
             if status == 1:
                 completed += 1
             elif status == 0:
                 # no data for lake (skipped)
-                pass
+                empty += 1
             else:
                 errors += 1
                 print(f"[Join_idx={join_idx}] {status}")
 
-    print(
-        f"done. wrote {completed} lakes, {errors} errors, {len(payloads)-completed-errors} outside of raster area."
-    )
+    print(f"done. wrote {completed} lakes, {empty} empty results, {errors} errors.")
 
 
 def normalizeTimeSeries(
@@ -422,6 +508,7 @@ def plotTimeSeries(buffer_lengths, xlsx_out_norm_pth, plot_dir, index_col=None, 
     If index_col is provided, only plots indexes in `index`
     If combined == True, plots all lakes in one figure, using area-weighted means across lakes.
     """
+
     ## vars
     buf_len = buffer_lengths[0] # use the smallest (90 m) buffer for plotting
 
@@ -437,7 +524,7 @@ def plotTimeSeries(buffer_lengths, xlsx_out_norm_pth, plot_dir, index_col=None, 
     if index_col is not None:
         assert index_col in df.columns, f"Column '{index_col}' not found in DataFrame. Available columns: {df.columns.tolist()}"
         assert set(index).issubset(set(df[index_col].unique())), f"Some values in index are not found in {index_col} column"
-        
+
     if "Buffer_m" not in df.columns:
         df["Buffer_m"] = buffer_lengths[0]  # assume single buffer if missing
 
