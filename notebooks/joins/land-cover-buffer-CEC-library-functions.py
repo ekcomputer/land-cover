@@ -75,7 +75,7 @@ land_cover_types = {
     18: "Water",
     19: "Snow/Ice",
 }
-classes = list(land_cover_types.keys())
+classes = list(land_cover_types.values())
 classes_dry = [name for name in land_cover_types.values() if name != "Water"]
 classes_wet = ["Wetland", "Water"]
 years = [2010]  # CEC land cover is single year 2010
