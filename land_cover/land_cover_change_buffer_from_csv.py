@@ -386,8 +386,21 @@ def extractTimeSeriesForLakes(
         large_lake_threshold,  # New parameter for size threshold
     )
 
-    with ctx.Pool(processes=n_workers, initializer=_init_worker, initargs=initargs) as pool:
-        iterator = pool.imap_unordered(_worker, payloads, chunksize=chunksize)
+    # Serial vs. multiprocessing execution
+    if n_workers == 1:
+        # Serial execution for debugging
+        _init_worker(
+            str(out_path),
+            raster_crs.to_wkt(),
+            list(buffer_lengths),
+            pth_lc_in,
+            list(classes),
+            list(years),
+            join_index,
+            pth_lc_in_coarse,
+            large_lake_threshold,
+        )
+        iterator = map(_worker, payloads)
         iterator = tqdm(iterator, total=len(payloads), desc="Lakes")
         completed = 0
         errors = 0
@@ -396,11 +409,27 @@ def extractTimeSeriesForLakes(
             if status == 1:
                 completed += 1
             elif status == 0:
-                # no data for lake (skipped)
                 empty += 1
             else:
                 errors += 1
                 print(f"[Join_idx={join_idx}] {status}")
+    else:
+        # Multiprocessing execution
+        with ctx.Pool(processes=n_workers, initializer=_init_worker, initargs=initargs) as pool:
+            iterator = pool.imap_unordered(_worker, payloads, chunksize=chunksize)
+            iterator = tqdm(iterator, total=len(payloads), desc="Lakes")
+            completed = 0
+            errors = 0
+            empty = 0
+            for join_idx, status in iterator:
+                if status == 1:
+                    completed += 1
+                elif status == 0:
+                    # no lc data for lake
+                    empty += 1
+                else:
+                    errors += 1
+                    print(f"[Join_idx={join_idx}] {status}")
 
     print(f"done. wrote {completed} lakes, {empty} empty results, {errors} errors.")
 
