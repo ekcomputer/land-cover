@@ -126,8 +126,8 @@ def extractBufferZonalHist(
             keys = (labels[m] - 1) * nclasses + (vals[m] - 1)  # (buffer_id, class_id) -> 1D key
             bc = np.bincount(keys, minlength=n_buffers * nclasses).reshape(n_buffers, nclasses)
         else:
-            # Return NaN-filled DataFrame instead of None when no valid data
-            return _create_nan_dataframe(poly, buffer_lengths, classes, years, join_index)
+            # Return None when no valid data
+            return None
         counts[bi] = bc
 
     # Scale to area (hectares), consistent with previous division by 1e4
