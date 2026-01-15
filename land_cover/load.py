@@ -55,6 +55,10 @@ GLAKES_gswl_abz_pth = Path(
 GLAKES_tpcat_pth = Path(
     "/Volumes/metis/Datasets/Liu_aq_veg/figshare/v4/25012091/edk_out/GLAKES_tcat.gpkg"
 )
+topocat_subset_aea_pth = Path(
+    "/Volumes/metis/Datasets/TOPOCAT-PLD/above3_subset/tcat_catch_above3_aea.gpkg"
+)
+
 # GLAKES_tpcat_pth_with_ancillary = (
 #     "/Volumes/metis/Datasets/Liu_aq_veg/figshare/v4/25012091/edk_out/GLAKES_tcat.gpkg"
 # )
@@ -125,6 +129,10 @@ old_GLAKES_filtered_fix_aqveg_dist_pth = Path(
 
 ## Outputs
 aleb_landcover_greenness_spatial = "/Volumes/metis/ABOVE3/land_cover_joins/out/shp/Efflux_Bogard_PLD_WBD_landCoverBuffers_core_tsFeatures_greenx2.gpkg"
+
+## Test data
+test_dir = Path("/Volumes/metis/ABOVE3/Test-data")
+topocat_biomass_test_subset_pth = test_dir / "tcat_catch_sub_test.gpkg"
 
 def loadEfflux():
     return gpd.read_file('/Volumes/metis/ABOVE3/LAKESHAPE/effluxlakes.shp')

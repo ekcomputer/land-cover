@@ -19,6 +19,9 @@ from land_cover.load import (
     biomass_30m_pth,
     biomass_300m_pth,
     doc_jn_catchment_pth,
+    topocat_biomass_test_subset_pth,
+    test_dir,
+    topocat_subset_aea_pth,
     plot_dir,
     time_series_features_agb_doc_csv_pth,
 )
@@ -117,19 +120,40 @@ parquet_out_time_series_features_short_pth = base_path.parent / f"{stem}_short_t
 shp_out_time_series_features_core_pth = base_path.parent / f"{stem}_core_tsFeatures.gpkg"
 
 ## RUN for preliminary harmonized DOC with no buffers
+# extractTimeSeriesForLakes(
+#     pth_shp_in=doc_jn_catchment_pth,
+#     buffer_lengths=buffer_lengths,
+#     csv_out_pth=time_series_features_agb_doc_csv_pth,
+#     pth_lc_in=biomass_30m_pth,
+#     pth_lc_in_coarse=biomass_300m_pth,
+#     years=years,
+#     n_workers=8,
+#     join_index="sample_idx",
+# )
 
+## TEST for TopoCAT dataset test subset
 extractTimeSeriesForLakes(
-    pth_shp_in=doc_jn_catchment_pth,
+    pth_shp_in=topocat_biomass_test_subset_pth,
     buffer_lengths=buffer_lengths,
-    csv_out_pth=time_series_features_agb_doc_csv_pth,
+    csv_out_pth=test_dir / "out" / "tcat_biomass_test_subset_agbBuffers.csv",
     pth_lc_in=biomass_30m_pth,
     pth_lc_in_coarse=biomass_300m_pth,
     years=years,
     n_workers=8,
-    join_index="sample_idx",
+    join_index="Outlet_id",
 )
 
 ## RUN for entire TopoCAT dataset
-# ...
+# extractTimeSeriesForLakes(
+#     pth_shp_in=topocat_subset_aea_pth,
+#     buffer_lengths=buffer_lengths,
+#     csv_out_pth="",
+#     pth_lc_in=biomass_30m_pth,
+#     pth_lc_in_coarse=biomass_300m_pth,
+#     years=years,
+#     n_workers=8,
+#     join_index="sample_idx",
+# )
+
 
 print("DONE.")
