@@ -9,9 +9,30 @@ pip install -e .
 ```
 
 ## Verify installation
+Prepare AGB raster mosaics
+```shell
+bash mosaic_vrt.sh [path to directory containing tifs]
+```
+
+Update paths to vrt files in [`load`](land_cover/load.py) module:
+* `biomass_30m_pth`
+* `biomass_300m_pth`
+* `topocat_subset_aea_pth`
+
+Run tests
 ```shell
 python -m pytest tests/test_biomass_change.py
 ```
+
+## Wanwan instructions
+
+Edit the biomass averaging [script](notebooks/joins/land-cover-buffer-biomass-hpc.py) to specify `csv_out_pth` and `n_workers`.
+
+Run:
+```shell
+python notebooks/joins/land-cover-buffer-biomass-hpc.py
+```
+
 ## Biomass Time Series
 
 Extract values from a continuous raster dataset (aboveground biomass) instead of categorical land cover classifications.
@@ -24,7 +45,7 @@ Extract values from a continuous raster dataset (aboveground biomass) instead of
 
 #### Raster Properties
 - **Data Type**: Int32
-- **Bands**: 39 (one per year, ~1986-2024)
+- **Bands**: 39 (one per year, 1984-2022)
 - **NoData Value**: -999
 - **CRS**: ESRI:102001 (Canada Albers Equal Area Conic)
 - **Pixel Size**: 30m or 300m

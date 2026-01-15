@@ -27,7 +27,7 @@ from land_cover.load import (
 )
 
 # I/O
-years = list(range(1986, 2025))  # 39 bands
+years = list(range(1984, 2023))  # 39 bands
 
 ## in: for greennessx2 and Land Cover v2
 
@@ -152,7 +152,7 @@ extractTimeSeriesForLakes(
 #     pth_lc_in_coarse=biomass_300m_pth,
 #     years=years,
 #     n_workers=8,
-#     join_index="sample_idx",
+#     join_index="Outlet_id",
 # )
 
 
