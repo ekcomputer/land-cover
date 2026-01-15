@@ -6,7 +6,7 @@ Summary
 For biomass change within polygons representing outwards buffers from lakes.
 Can optionally join in all attributes from original lake dataset.
 With optimizations like pre-loading raster datasets, memory management, and using a coarsened raster
-for large catchments: runs at 60 it/sec for a one-band CEC raster.
+for large catchments: runs at 60 it/sec for a 39-band AGB raster.
 
 Write three outputs:
 1. All input variables for lakes that were matched to land cover
@@ -155,15 +155,14 @@ def extractBufferZonalStats(
         return None
     # Assemble dataframe
     # TODO: test multiple buffers
-    df = pd.DataFrame({
-        "Year": np.repeat(years[:n_bands], n_buffers),
-        "Buffer_m": np.tile(buffer_lengths, n_bands),
-        "mean": means.flatten(),
-        "std": stds.flatten(),
-        # "Lake_name": poly.Lake_name,
-
-        })
-    df["Lake_name"] = poly["Lake_name"].iloc[0] if "Lake_name" in poly.columns else None
+    df = pd.DataFrame(
+        {
+            "Year": np.repeat(years[:n_bands], n_buffers),
+            "Buffer_m": np.tile(buffer_lengths, n_bands),
+            "mean": means.flatten(),
+            "std": stds.flatten(),
+        }
+    )
     df[join_index] = poly[join_index].iloc[0] if join_index in poly.columns else None
     df["Area_m2"] = poly["Area_m2"].iloc[0] if "Area_m2" in poly.columns else None
     df["Perim_m2"] = poly["Perim_m2"].iloc[0] if "Perim_m2" in poly.columns else None
@@ -207,7 +206,6 @@ def _create_nan_dataframe_biomass(
     )
 
     # Add metadata columns
-    df["Lake_name"] = poly.index[0]
     df[join_index] = poly[join_index].iloc[0] if join_index in poly else None
     df["Area_m2"] = poly["Area_m2"].iloc[0] if "Area_m2" in poly else None
     df["Perim_m2"] = poly["Perim_m2"].iloc[0] if "Perim_m2" in poly else None
@@ -254,7 +252,6 @@ def _gdf_from_payload(payload: dict, crs) -> "gpd.GeoDataFrame":
     # Note column order matters
     gdf = gpd.GeoDataFrame(
         {
-            "Lake_name": [payload["Lake_name"]],
             join_index: [payload[join_index]],
             "Area_m2": [payload["Area_m2"]],
             "Perim_m2": [payload["Perim_m2"]],
@@ -384,7 +381,6 @@ def extractTimeSeriesForLakes(
         polys[join_index] = polys.index
     polys["Area_m2"] = polys.area
     polys["Perim_m2"] = polys.length
-    polys["Lake_name"] = polys.index
 
     # Optional envelope filter
     if envelope_pth is not None:
@@ -405,7 +401,7 @@ def extractTimeSeriesForLakes(
         else:
             _prime_header(
                 out_path,
-                ("Year", "Buffer_m", "agb_mean", "agb_std", "Lake_name", join_index, "Area_m2", "Perim_m2"),
+                ("Year", "Buffer_m", "agb_mean", "agb_std", join_index, "Area_m2", "Perim_m2"),
             )
     except Exception as e:
         print(f"Resume read failed ({e}); proceeding without resume filtering.")
@@ -421,7 +417,6 @@ def extractTimeSeriesForLakes(
     for _, row in pending.iterrows():
         payloads.append(
             {
-                "Lake_name": int(row["Lake_name"]),
                 join_index: row[join_index],
                 "Area_m2": float(row["Area_m2"]),
                 "Perim_m2": float(row["Perim_m2"]),

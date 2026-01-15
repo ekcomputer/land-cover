@@ -17,7 +17,6 @@ TODO:
 * Check that water normalization only refers to largest/central lake within buffer.
 * IMPORTANT: Find a way to automatically include Lat/Long and any note columns in final spreadsheet (perhaps join in?) Right now, I'm just using a quick fix in Excel.
 * Fix functionality so that multiple buffers can be run at once.
-* Remove "Lake_name" field
 
 """
 
@@ -163,7 +162,6 @@ def extractBufferZonalHist(
     df = pd.DataFrame(areas, columns=classes)
     df["Year"] = np.repeat(years[:n_bands], n_buffers)
     df["Buffer_m"] = np.tile(buffer_lengths_sorted, n_bands)
-    df["Lake_name"] = poly.index[0]
     df[join_index] = poly[join_index].iloc[0] if join_index in poly else None
     df["Area_m2"] = poly["Area_m2"].iloc[0] if "Area_m2" in poly else None
     df["Perim_m2"] = poly["Perim_m2"].iloc[0] if "Perim_m2" in poly else None
@@ -203,7 +201,6 @@ def _create_nan_dataframe(
     # Add metadata columns
     df["Year"] = np.repeat(years[:n_bands], n_buffers)
     df["Buffer_m"] = np.tile(sorted(buffer_lengths), n_buffers)
-    df["Lake_name"] = poly.index[0]
     df[join_index] = poly[join_index].iloc[0] if join_index in poly else None
     df["Area_m2"] = poly["Area_m2"].iloc[0] if "Area_m2" in poly else None
     df["Perim_m2"] = poly["Perim_m2"].iloc[0] if "Perim_m2" in poly else None
@@ -252,7 +249,6 @@ def _gdf_from_payload(payload: dict, crs) -> "gpd.GeoDataFrame":
     # Note column order matters
     gdf = gpd.GeoDataFrame(
         {
-            "Lake_name": [payload["Lake_name"]],
             join_index: [payload[join_index]],
             "Area_m2": [payload["Area_m2"]],
             "Perim_m2": [payload["Perim_m2"]],
@@ -390,7 +386,6 @@ def extractTimeSeriesForLakes(
         polys[join_index] = polys.index
     polys["Area_m2"] = polys.area
     polys["Perim_m2"] = polys.length
-    polys["Lake_name"] = polys.index
 
     # Optional envelope filter
     if envelope_pth is not None:
@@ -412,7 +407,7 @@ def extractTimeSeriesForLakes(
             _prime_header(
                 out_path,
                 classes,
-                ("Year", "Buffer_m", "Lake_name", join_index, "Area_m2", "Perim_m2"),
+                ("Year", "Buffer_m", join_index, "Area_m2", "Perim_m2"),
             )
     except Exception as e:
         print(f"Resume read failed ({e}); proceeding without resume filtering.")
@@ -428,7 +423,6 @@ def extractTimeSeriesForLakes(
     for _, row in pending.iterrows():
         payloads.append(
             {
-                "Lake_name": int(row["Lake_name"]),
                 join_index: row[join_index],
                 "Area_m2": float(row["Area_m2"]),
                 "Perim_m2": float(row["Perim_m2"]),
@@ -703,15 +697,28 @@ def plotTimeSeries(
     if combined:
         # Group by Year and calculate area-weighted means across all lakes
         df_combined = (
-            df.groupby('Year')
-            .apply(lambda group: pd.Series({
-                col: np.average(group[col], weights=group['Area_m2']) 
-                if col not in ['Year', 'Buffer_m', 'Lake_name', index_col, 'Area_m2', 'Perim_m2'] and group[col].notna().any()
-                else group[col].iloc[0] if col in ['Year', 'Buffer_m'] 
-                else group[col].sum() if col in ['Area_m2', 'Perim_m2']
-                else 'Aggregated'
-                for col in df.columns
-            }))
+            df.groupby("Year")
+            .apply(
+                lambda group: pd.Series(
+                    {
+                        col: (
+                            np.average(group[col], weights=group["Area_m2"])
+                            if col not in ["Year", "Buffer_m", index_col, "Area_m2", "Perim_m2"]
+                            and group[col].notna().any()
+                            else (
+                                group[col].iloc[0]
+                                if col in ["Year", "Buffer_m"]
+                                else (
+                                    group[col].sum()
+                                    if col in ["Area_m2", "Perim_m2"]
+                                    else "Aggregated"
+                                )
+                            )
+                        )
+                        for col in df.columns
+                    }
+                )
+            )
             .reset_index(drop=True)
         )
 
@@ -813,7 +820,7 @@ def extractTimeSeriesFeatures(
     df.query('Buffer_m == @buffer_lengths[0]', inplace=True)
 
     ## Group by lake
-    dfg = df.groupby('Lake_name')
+    dfg = df.groupby(join_index)
 
     ## Take last (year 2014) value as initial features for output df
     stats_last = dfg.last()
@@ -868,7 +875,7 @@ def extractTimeSeriesFeatures(
     gdf_og_data = gdf_og_data[joined_cols]
 
     ## join and rename index
-    stats = stats.merge(gdf_og_data, left_on='Lake_name', right_index=True, how='inner', validate='1:1') # TODO: make more flexible for when I actually have lake name
+    stats = stats.merge(gdf_og_data, left_index=True, right_index=True, how="inner", validate="1:1")
     stats.index.rename('Lake', inplace=True) # Note the 'lake' corresponds to index in pth_shp_in (arbitrary index after concatennating PLD and WBD lakes)
 
     ## Reorder to put meta vars first
