@@ -12,6 +12,9 @@ Write three outputs:
 1. All input variables for lakes that were matched to land cover
 2. All input variables for all lakes
 3. Selected input variables for all lakes
+
+TODO:
+* test multiple buffers
 """
 
 import fcntl
@@ -116,8 +119,8 @@ def extractBufferZonalStats(
         data, tr = rio_mask(src, [buf_geoms[-1]], crop=True, filled=True, nodata=nodata)
     except ValueError as e:
         if "do not overlap raster" in str(e).lower():
-            # Return NaN-filled DataFrame instead of None for consistent output
-            return _create_nan_dataframe_biomass(poly, buffer_lengths, years, join_index)
+            # Return None to indicate no overlap
+            return None
         raise
 
     n_bands, H, W = data.shape
@@ -148,9 +151,10 @@ def extractBufferZonalStats(
 
     means /= SCALE_FACTOR
     stds /= SCALE_FACTOR
-
+    if np.all(np.isnan(means)) and np.all(np.isnan(stds)):
+        return None
     # Assemble dataframe
-    # TODO: implement multiple buffers
+    # TODO: test multiple buffers
     df = pd.DataFrame({
         "Year": np.repeat(years[:n_bands], n_buffers),
         "Buffer_m": np.tile(buffer_lengths, n_bands),

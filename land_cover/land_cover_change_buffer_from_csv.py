@@ -125,8 +125,8 @@ def extractBufferZonalHist(
         data, tr = rio_mask(src, [buf_geoms[-1]], crop=True, filled=True, nodata=nodata)
     except ValueError as e:
         if "do not overlap raster" in str(e).lower():
-            # Return NaN-filled DataFrame instead of None for consistent output
-            return _create_nan_dataframe(poly, buffer_lengths, classes, years, join_index)
+            # Return None to indicate no overlap
+            return None
         raise
 
     n_bands, H, W = data.shape
