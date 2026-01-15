@@ -9,7 +9,7 @@ pip install -e .
 ```
 
 ## Verify installation
-Prepare AGB raster mosaics
+Prepare AGB raster mosaics (requires gdal)
 ```shell
 bash mosaic_vrt.sh [path to directory containing tifs]
 ```
@@ -19,19 +19,21 @@ Update paths to vrt files in [`load`](land_cover/load.py) module:
 * `biomass_300m_pth`
 * `topocat_subset_aea_pth`
 
-Run tests
+Run tests to verify the installation.
 ```shell
 python -m pytest tests/test_biomass_change.py
 ```
 
 ## Wanwan instructions
 
-Edit the biomass averaging [script](notebooks/joins/land-cover-buffer-biomass-hpc.py) to specify `csv_out_pth` and `n_workers`.
+1. Edit the biomass averaging [script](notebooks/joins/land-cover-buffer-biomass-hpc.py) to specify `csv_out_pth` and `n_workers`.
 
-Run:
+2. Run:
 ```shell
 python notebooks/joins/land-cover-buffer-biomass-hpc.py
 ```
+3. There will be no errors.
+4. Zip and send me the result!
 
 ## Biomass Time Series
 
