@@ -1,9 +1,20 @@
 # land-cover
 Scripts for analyzing land cover raster data and comparing to lake biogeochemical trends.
 
+## Installation
+```shell
+mamba create -n landcover python=3.11
+mamba activate landcover   
+pip install -e . 
+```
+
+## Verify installation
+```shell
+python -m pytest tests/test_biomass_change.py
+```
 ## Biomass Time Series
 
-Adapted `biomass_change.py` and `load.py` modules to work with continuous raster datasets (aboveground biomass) instead of categorical land cover classifications.
+Extract values from a continuous raster dataset (aboveground biomass) instead of categorical land cover classifications.
 
 ### Raster Specifications
 

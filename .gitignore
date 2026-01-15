@@ -130,3 +130,6 @@ dmypy.json
 
 # max
 .DS_Store
+
+# VSCODE
+settings.json
