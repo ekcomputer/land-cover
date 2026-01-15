@@ -132,7 +132,7 @@ aleb_landcover_greenness_spatial = "/Volumes/metis/ABOVE3/land_cover_joins/out/s
 
 ## Test data
 test_dir = Path("/Volumes/metis/ABOVE3/Test-data")
-topocat_biomass_test_subset_pth = test_dir / "tcat_catch_sub_test.gpkg"
+topocat_biomass_test_subset_pth = test_dir / "tcat_catch_sub_test_gsl.gpkg" # contains Great Sl. L.
 
 def loadEfflux():
     return gpd.read_file('/Volumes/metis/ABOVE3/LAKESHAPE/effluxlakes.shp')

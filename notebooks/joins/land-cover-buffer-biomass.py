@@ -135,7 +135,7 @@ shp_out_time_series_features_core_pth = base_path.parent / f"{stem}_core_tsFeatu
 extractTimeSeriesForLakes(
     pth_shp_in=topocat_biomass_test_subset_pth,
     buffer_lengths=buffer_lengths,
-    csv_out_pth=test_dir / "out" / "tcat_biomass_test_subset_agbBuffers.csv",
+    csv_out_pth=test_dir / "out" / "tcat_biomass_test_subset_gsl_agbBuffers.csv",
     pth_lc_in=biomass_30m_pth,
     pth_lc_in_coarse=biomass_300m_pth,
     years=years,
